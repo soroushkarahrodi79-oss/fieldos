@@ -4,8 +4,6 @@ on:
   push:
     branches:
       - main
-      # Temporary test deployment. Remove this branch trigger before merging the PR.
-      - codex/fieldos-mvp-workflow
   workflow_dispatch:
 
 permissions:
