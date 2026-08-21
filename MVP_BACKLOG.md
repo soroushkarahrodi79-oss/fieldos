@@ -8,6 +8,16 @@ Priority definitions:
 
 Every P0 below is traced to the core workflow. If it isn't necessary for that workflow, it isn't P0.
 
+## Implementation snapshot — 2026-08-21
+
+- Implemented in code: P0-1 through P0-20, including the five-screen local workflow, honest GPS
+  failure states, nearby asset selection, one-photo capture, non-destructive editing/location
+  adjustment, data export, ZIP backup, durability banner, and automated domain/data/export tests.
+- Still a release blocker: **P0-21 physical iPhone and Android smoke testing**. Browser APIs,
+  installed-PWA persistence, camera capture, GPS behavior, storage pressure, and native share sheets
+  cannot be accepted based on desktop automation alone.
+- Post-MVP P1/P2 scope remains deferred unless the product contract is deliberately changed.
+
 ---
 
 ## P0 — required before first field test

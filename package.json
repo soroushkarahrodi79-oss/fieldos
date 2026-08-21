@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "FieldOS — offline-first PWA for structured tourism field research and evidence collection (Phase 1A foundation).",
+  "description": "FieldOS — offline-first PWA for structured tourism field research and evidence collection.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
