@@ -21,6 +21,8 @@ Physical iPhone and Android validation is still required before using FieldOS fo
 
 The exact physical-device procedure and evidence to record are in
 [docs/DEVICE_SMOKE_TEST.md](docs/DEVICE_SMOKE_TEST.md).
+The device gate is recorded as passed in [docs/DEVICE_TEST_RESULT.md](docs/DEVICE_TEST_RESULT.md),
+and the next operational step is [docs/FIRST_FIELD_RUN.md](docs/FIRST_FIELD_RUN.md).
 
 ## Run locally
 
@@ -49,10 +51,10 @@ FieldOS deliberately has no backend in the MVP. React and TypeScript provide the
 
 Exports may contain observer names, precise coordinates, notes, and photographs. They should be handled as sensitive field evidence. FieldOS does not upload records automatically.
 
-## Decision still required
+## License
 
-The repository is public, but no open-source license has been selected. Public visibility does not
-grant reuse rights; the repository owner must deliberately choose and add a license.
+Copyright 2026 Soroush Karahrodi. FieldOS source code and documentation are available under the
+[Apache License 2.0](LICENSE).
 
 ## License
 

@@ -2,6 +2,7 @@
   "name": "fieldos",
   "version": "0.1.0",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "description": "FieldOS — offline-first PWA for structured tourism field research and evidence collection.",
   "scripts": {
