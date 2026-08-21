@@ -1,0 +1,106 @@
+# FieldOS — MVP Backlog (v0)
+
+Priority definitions:
+- **P0** — required before the first real 1–2 hour field test. If any P0 is missing, the core
+  workflow (capture → located → offline-saved → exported, without data loss) is broken.
+- **P1** — useful right after the first field test; not required to prove the thesis.
+- **P2** — later; explicitly out of the near path.
+
+Every P0 below is traced to the core workflow. If it isn't necessary for that workflow, it isn't P0.
+
+---
+
+## P0 — required before first field test
+
+### Foundation
+- **P0-1** Project scaffold: React + TS (strict) + Vite + vite-plugin-pwa; installable PWA that **launches offline**.
+- **P0-2** IndexedDB data layer (Dexie): `FieldSession`, `Asset`, `Observation`, `MediaAttachment`
+  with `schemaVersion`; write-once capture block enforced in code; discriminated `ObservationValue` + `Evidence`.
+- **P0-3** Storage-health module wrapping `storage.persist()` / `persisted()` / `estimate()`; request
+  persistence on first write; expose durability + quota state to UI; **every write handles failure explicitly**.
+- **P0-4** Data-layer unit tests (Vitest): CRUD, capture-block immutability, manual-fix-never-overwrites-raw,
+  edit tracking, and storage/quota-failure surfaces (no silent success).
+
+### Field Sessions
+- **P0-5** Create / name / resume / close a session (title required; observerName/purpose optional). Local only.
+- **P0-6** Sessions home screen with empty state and "resume active session."
+
+### Capture (the core)
+- **P0-7** New Observation screen: auto timestamp + auto geolocation (with accuracy) on open.
+- **P0-8** Category single-select (controlled vocabulary) — the one required choice.
+- **P0-9** **Category-specific value** select (the discriminated per-category values; no universal
+  scale) + free-text note (optional; required by convention for `other`).
+- **P0-10** Evidence control: OBSERVED default / MEASURED (+ value/unit + optional context) /
+  REPORTED (+ optional source note).
+- **P0-11** Graceful geolocation failure: denied/timeout/unavailable → set `locationStatus`, **save anyway**, no fabricated coordinate.
+- **P0-12** One photo per observation via native capture; never blocks save; blob stored in IndexedDB.
+- **P0-13** Save is instant, local, never network-gated; returns to list with new item on top.
+- **P0-13b** Geospatial context without a map: distance to nearby assets + selection from
+  nearby/recent assets (haversine helper; no map library).
+
+### Review / edit
+- **P0-14** Observation list per session (category, category-specific value, time, accuracy, media/edited badges).
+- **P0-15** Observation detail with immutable capture block shown; edit interpretation fields (bumps editCount).
+- **P0-16** Non-destructive location adjustment (writes `locationAdjustment`; raw `capturedLocation`
+  retained; `effectiveLocation` derived); soft-delete with undo.
+
+### Export & Backup (durability backstop)
+- **P0-17** **Data export** → `observations.json` (canonical) + `observations.csv` + `observations.geojson`,
+  generated on-device, via OS share/download. Fully offline. Timestamps/UUIDs preserved verbatim.
+- **P0-18** Serializer golden-file tests incl. evidence method / edited / location-source / accuracy /
+  category-specific value; UUID + timestamp round-trip preservation.
+- **P0-19** **Full-session ZIP backup** (fflate): `manifest.json` + the three data files + `media/*`;
+  manifest carries schema version, exportedAt, sessionId, observation count, media count, app version.
+  Fallback "data export without media" if ZIP generation fails — structured data must always get out.
+
+### Safety net
+- **P0-20** Durability banner: nudge to **back up** when `persisted()` is false / session old & unbacked-up.
+- **P0-21** Real-device smoke test (physical iPhone + Android): offline launch, capture+GPS,
+  background/restart survival, quota-with-photos, export + full backup. **Gate for the field test.**
+  (Durability is validated here — not presumed to fail.)
+
+---
+
+## P1 — useful after first field test
+
+- **P1-1** Interactive map view (MapLibre/Leaflet) to see observations as points; **online tiles first**,
+  cached/offline tiles only if justified.
+- **P1-2** Voice notes (MediaRecorder) — audio attachments; handle iOS quirks.
+- **P1-3** Import preloaded reference assets from GeoJSON (with `source: preloaded`).
+- **P1-4** Asset polygon geometry (beyond points).
+- **P1-5** Full revision/audit log per observation (append-only), beyond editCount.
+- **P1-6** Restore UI: re-import a full-session backup / canonical `observations.json` (the format is P0; the UI is P1).
+- **P1-7** Refine per-category value sets or add categories, if the first field test shows gaps.
+- **P1-8** Multiple photos per observation.
+- **P1-9** Coordinate-precision reduction option when sharing (privacy).
+- **P1-10** Quota dashboard (bytes used / remaining, per session).
+- **P1-11** Session-level and per-observation export; export selected records.
+
+## P2 — later
+
+- **P2-1** Optional cloud backup/sync (local-first still authoritative).
+- **P2-2** Multi-user / shared sessions, roles.
+- **P2-3** Any dashboard/analytics.
+- **P2-4** AI voice-to-structured-observation module — **only** as clearly machine-labelled,
+  never masquerading as OBSERVED/MEASURED/REPORTED field evidence.
+- **P2-5** SNTO / HATI or other research-system integration.
+- **P2-6** `DERIVED` evidence method (only once something actually derives data).
+
+---
+
+## Traceability check (P0 → workflow)
+
+| Workflow step | Covered by |
+|---------------|-----------|
+| Open app offline | P0-1 |
+| Resume/create session | P0-5, P0-6 |
+| Create observation | P0-7, P0-8, P0-9 |
+| Auto timestamp + coordinates + accuracy | P0-7 |
+| Structured (category + category-specific value) + evidence + note | P0-8, P0-9, P0-10 |
+| Geospatial context (nearby assets, no map) | P0-13b |
+| Attach photo | P0-12 |
+| Save locally offline, no loss | P0-2, P0-3, P0-13, P0-20 |
+| Continue rapidly | P0-13, P0-14 |
+| Edit unsynced / adjust location non-destructively | P0-15, P0-16 |
+| Export + full backup later | P0-17, P0-19 |
+| Trust / provenance / durability | P0-3, P0-4, P0-18, P0-20, P0-21 |
