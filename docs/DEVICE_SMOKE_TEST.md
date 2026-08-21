@@ -26,7 +26,8 @@ smallest reliable reproduction. Screenshots must use synthetic data.
 
 ## Prerequisite: HTTPS test build
 
-- [ ] The exact commit under test is deployed at an HTTPS URL reachable by both phones.
+- Test URL: [https://soroushkarahrodi79-oss.github.io/fieldos/](https://soroushkarahrodi79-oss.github.io/fieldos/)
+- [ ] The exact commit under test is deployed at that HTTPS URL and reachable by both phones.
 - [ ] The app is installed from the browser to the Home Screen/app launcher.
 - [ ] The installed app opens in standalone mode rather than as a normal browser tab.
 - [ ] No production or personally identifying field data is loaded for this test.

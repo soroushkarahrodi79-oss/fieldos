@@ -15,6 +15,8 @@ The repository contains the first usable MVP workflow:
 - export portable data or create a ZIP backup with media;
 - surface storage durability and quota failures instead of reporting false success.
 
+Test deployment: [https://soroushkarahrodi79-oss.github.io/fieldos/](https://soroushkarahrodi79-oss.github.io/fieldos/)
+
 Physical iPhone and Android validation is still required before using FieldOS for a real field campaign. See [MVP_BACKLOG.md](MVP_BACKLOG.md) and [PRODUCT_CONTRACT.md](PRODUCT_CONTRACT.md) for the release gates and scope.
 
 The exact physical-device procedure and evidence to record are in
@@ -47,11 +49,10 @@ FieldOS deliberately has no backend in the MVP. React and TypeScript provide the
 
 Exports may contain observer names, precise coordinates, notes, and photographs. They should be handled as sensitive field evidence. FieldOS does not upload records automatically.
 
-## Decisions still required
+## Decision still required
 
-Before device testing can begin, the repository owner must choose an HTTPS deployment target. Before
-making the repository an open-source project, the owner must also choose and add a license. Neither
-decision is implied by the current code or repository visibility.
+The repository is public, but no open-source license has been selected. Public visibility does not
+grant reuse rights; the repository owner must deliberately choose and add a license.
 
 ## License
 
