@@ -86,6 +86,12 @@ npm run typecheck    # tsc --noEmit (strict)
 ```
 
 ## Current status
-**Phase 1A (foundation) in progress.** Data layer, domain types, serializers, backup, storage-health
-and tests only. **No polished UI, no maps, no deploy, no auth.** A minimal dev/debug screen may exist
-to verify persistence. Build the polished five-screen UI only after the Phase 1A review passes.
+**MVP workflow implemented; physical-device validation pending.** The app now includes the five
+planned surfaces: sessions home, session/observation list, new observation capture, observation
+detail/edit, and export/backup. The data layer, provenance rules, GPS failure handling, nearby
+assets, photo storage, serializers, ZIP backup, storage-health banner, and automated tests are in
+place. There are intentionally still **no maps, backend, auth, or cloud sync**.
+
+Before any real field campaign, complete P0-21 on physical iPhone and Android hardware: installed
+offline launch, GPS/photo capture, background and restart survival, storage pressure, OS share,
+and restoration of the exported files in external tools.
