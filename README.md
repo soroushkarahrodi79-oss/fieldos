@@ -17,6 +17,9 @@ The repository contains the first usable MVP workflow:
 
 Physical iPhone and Android validation is still required before using FieldOS for a real field campaign. See [MVP_BACKLOG.md](MVP_BACKLOG.md) and [PRODUCT_CONTRACT.md](PRODUCT_CONTRACT.md) for the release gates and scope.
 
+The exact physical-device procedure and evidence to record are in
+[docs/DEVICE_SMOKE_TEST.md](docs/DEVICE_SMOKE_TEST.md).
+
 ## Run locally
 
 Requires Node.js 20 or newer.
@@ -43,6 +46,12 @@ FieldOS deliberately has no backend in the MVP. React and TypeScript provide the
 ## Privacy
 
 Exports may contain observer names, precise coordinates, notes, and photographs. They should be handled as sensitive field evidence. FieldOS does not upload records automatically.
+
+## Decisions still required
+
+Before device testing can begin, the repository owner must choose an HTTPS deployment target. Before
+making the repository an open-source project, the owner must also choose and add a license. Neither
+decision is implied by the current code or repository visibility.
 
 ## License
 
