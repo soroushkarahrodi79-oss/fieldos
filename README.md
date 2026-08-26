@@ -17,12 +17,14 @@ The repository contains the first usable MVP workflow:
 
 Test deployment: [https://soroushkarahrodi79-oss.github.io/fieldos/](https://soroushkarahrodi79-oss.github.io/fieldos/)
 
-Physical iPhone and Android validation is still required before using FieldOS for a real field campaign. See [MVP_BACKLOG.md](MVP_BACKLOG.md) and [PRODUCT_CONTRACT.md](PRODUCT_CONTRACT.md) for the release gates and scope.
-
-The exact physical-device procedure and evidence to record are in
-[docs/DEVICE_SMOKE_TEST.md](docs/DEVICE_SMOKE_TEST.md).
-The device gate is recorded as passed in [docs/DEVICE_TEST_RESULT.md](docs/DEVICE_TEST_RESULT.md),
-and the next operational step is [docs/FIRST_FIELD_RUN.md](docs/FIRST_FIELD_RUN.md).
+The P0 physical-device gate (iPhone and Android) is recorded as **passed** on 2026-08-21, based on
+the repository owner's attestation against the checklist in
+[docs/DEVICE_SMOKE_TEST.md](docs/DEVICE_SMOKE_TEST.md) — see
+[docs/DEVICE_TEST_RESULT.md](docs/DEVICE_TEST_RESULT.md) for the recorded result and reopening
+conditions. This is a manual, owner-attested pass, not an automated or third-party-audited one. See
+[MVP_BACKLOG.md](MVP_BACKLOG.md) and [PRODUCT_CONTRACT.md](PRODUCT_CONTRACT.md) for the full release
+gates and scope, and [docs/FIRST_FIELD_RUN.md](docs/FIRST_FIELD_RUN.md) for the next operational step
+(the first 1–2 hour real field run, which has not yet taken place).
 
 ## Run locally
 
@@ -55,7 +57,3 @@ Exports may contain observer names, precise coordinates, notes, and photographs.
 
 Copyright 2026 Soroush Karahrodi. FieldOS source code and documentation are available under the
 [Apache License 2.0](LICENSE).
-
-## License
-
-No open-source license has been selected yet. Copyright remains with the repository owner until a license is added.
