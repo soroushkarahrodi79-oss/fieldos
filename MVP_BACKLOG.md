@@ -78,6 +78,13 @@ Every P0 below is traced to the core workflow. If it isn't necessary for that wo
 - **P1-1** Interactive map view (MapLibre/Leaflet) to see observations as points; **online tiles first**,
   cached/offline tiles only if justified.
 - **P1-2** Voice notes (MediaRecorder) — audio attachments; handle iOS quirks.
+  **Implemented in code; physical mobile validation pending.** Native `getUserMedia` +
+  `MediaRecorder` capture with runtime MIME negotiation (`audio/mp4` first for Safari/iOS),
+  optional per-observation voice note, in-place preview/replay/remove/re-record, a 3-minute
+  defensive cap, local IndexedDB persistence via the existing generic `MediaAttachment`, audio
+  playback on the observation detail screen, honest media badges (no longer mislabelled "Photo"),
+  and audio coverage in the full-session ZIP backup. No transcription, no backend, no AI, no
+  network dependency. See `docs/VOICE_NOTES_SMOKE_TEST.md` for the device validation plan.
 - **P1-3** Import preloaded reference assets from GeoJSON (with `source: preloaded`).
 - **P1-4** Asset polygon geometry (beyond points).
 - **P1-5** Full revision/audit log per observation (append-only), beyond editCount.

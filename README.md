@@ -9,7 +9,7 @@ The repository contains the first usable MVP workflow:
 - create, resume, inspect, and close local field sessions;
 - capture category-specific observations with timestamps and honest GPS status;
 - record observed, measured, or reported evidence;
-- attach a photo and link a nearby known asset;
+- attach a photo, record an optional offline voice note, and link a nearby known asset;
 - review and edit interpretation while preserving the immutable capture block;
 - adjust a location non-destructively and soft-delete with undo;
 - export portable data or create a ZIP backup with media;
@@ -51,7 +51,7 @@ FieldOS deliberately has no backend in the MVP. React and TypeScript provide the
 
 ## Privacy
 
-Exports may contain observer names, precise coordinates, notes, and photographs. They should be handled as sensitive field evidence. FieldOS does not upload records automatically.
+Exports may contain observer names, precise coordinates, notes, photographs, and voice recordings. They should be handled as sensitive field evidence. Voice notes stay on this device until you export them; the microphone is accessed only after you press Record, and no audio is ever uploaded. FieldOS does not upload records automatically.
 
 ## License
 

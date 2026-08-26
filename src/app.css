@@ -77,6 +77,21 @@ fieldset { margin: 24px 0; padding: 0; border: 0; } legend { margin-bottom: 12px
 .segmented { display: grid; grid-template-columns: repeat(3, 1fr); margin-bottom: 16px; border: 1px solid #bec8c0; border-radius: 12px; overflow: hidden; }.segmented button { min-height: 48px; border: 0; border-right: 1px solid #bec8c0; background: white; color: #334a3b; font-weight: 720; }.segmented button:last-child { border-right: 0; }
 .photo-input input { padding: 9px; }.photo-input small { color: #647269; }
 
+.voice-field { display: grid; gap: 8px; margin-top: 6px; }
+.voice-field .field-label { font-weight: 600; color: #2d4636; }.voice-field .field-hint { color: #768078; font-size: .75rem; font-weight: 500; }
+.voice-recorder { display: grid; gap: 10px; }
+.voice-record-btn { justify-self: start; }
+.voice-recording-active { display: grid; gap: 8px; padding: 12px; border: 1px solid #c6cec7; border-radius: 13px; background: #fafbf8; }
+.recording-indicator { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: #8a2b1f; }
+.rec-dot { width: 12px; height: 12px; border-radius: 50%; background: #c8322a; box-shadow: 0 0 0 0 rgba(200,50,42,.5); }
+@media (prefers-reduced-motion: no-preference) { .rec-dot { animation: rec-pulse 1.2s ease-in-out infinite; } }
+@keyframes rec-pulse { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+.voice-preview { display: grid; gap: 8px; padding: 12px; border: 1px solid #c6cec7; border-radius: 13px; background: #fafbf8; }
+.voice-preview-label { font-weight: 700; color: #2d4636; }
+.voice-preview audio, .voice-evidence audio { width: 100%; }
+.voice-error { margin: 0; padding: 10px 12px; border-radius: 10px; background: #fdecea; color: #8a2b1f; font-size: .9rem; }
+.voice-evidence { margin: 18px 0; }.voice-evidence-item { display: grid; gap: 6px; margin-top: 10px; }
+
 .immutable-card { padding: 18px; display: grid; gap: 7px; border-left: 5px solid #d87b45; border-radius: 8px 16px 16px 8px; background: #fff9ed; }.immutable-card > span { color: #9c542d; font-size: .75rem; font-weight: 850; text-transform: uppercase; }.immutable-card p { margin: 0; color: #647068; }
 .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }.detail-grid div { display: grid; gap: 5px; }.detail-grid span { color: #6c766f; font-size: .78rem; }.detail-grid p { margin: 0; }
 .photos { margin: 18px 0; display: grid; gap: 12px; }.photos img { width: 100%; max-height: 520px; border-radius: 18px; object-fit: cover; }

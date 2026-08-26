@@ -32,17 +32,24 @@ export interface SessionBundle {
 
 /** Map a MIME type to a file extension for backup filenames. */
 export function extensionForMime(mimeType: string): string {
+  // Recorders often report codec parameters (e.g. "audio/webm;codecs=opus"); the extension is
+  // decided by the container alone, so strip parameters and normalise before mapping.
+  const base = mimeType.split(';')[0]!.trim().toLowerCase();
   const map: Record<string, string> = {
     'image/jpeg': 'jpg',
+    'image/jpg': 'jpg',
     'image/png': 'png',
     'image/webp': 'webp',
     'image/heic': 'heic',
     'audio/webm': 'webm',
     'audio/mp4': 'm4a',
+    'audio/x-m4a': 'm4a',
+    'audio/aac': 'm4a',
     'audio/mpeg': 'mp3',
     'audio/ogg': 'ogg',
+    'audio/wav': 'wav',
   };
-  return map[mimeType] ?? 'bin';
+  return map[base] ?? 'bin';
 }
 
 /** Canonical backup path for a media blob: media/{observationId}_{mediaId}.{ext}. */
