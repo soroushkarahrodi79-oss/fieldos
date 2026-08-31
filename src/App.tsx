@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from 'react';
 import { repositories } from './db/repositories';
 import { captureCurrentLocation, unavailableLocation } from './domain/geolocation';
 import { nearbyAssets } from './domain/geo';
+import { categoryLabels, readable } from './domain/labels';
 import { evidenceFromForm, observationValueFor, type EvidenceForm } from './domain/observationForm';
 import { nowIso } from './domain/time';
 import { CATEGORY_VALUES, type Asset, type AssetType, type CapturedLocation, type EvidenceMethod, type FieldSession, type MediaAttachment, type Observation, type ObservationCategory, type Uuid } from './domain/types';
@@ -16,25 +17,22 @@ import type { AudioRecording } from './media/audioRecorder';
 import { APP_VERSION } from './version';
 import './app.css';
 
+// The map view is a separate lazy chunk: the large MapLibre bundle loads only when the map opens,
+// keeping the core offline capture flow's initial load light. The chunk is still precached, so the
+// map works offline once visited; a load failure never blocks the rest of FieldOS.
+const FieldMap = lazy(() => import('./components/FieldMap').then((m) => ({ default: m.FieldMap })));
+
 type Screen =
   | { name: 'home' }
   | { name: 'session'; sessionId: Uuid }
   | { name: 'capture'; sessionId: Uuid }
   | { name: 'detail'; sessionId: Uuid; observationId: Uuid }
+  | { name: 'map'; sessionId: Uuid }
   | { name: 'export'; sessionId: Uuid };
 
-const categoryLabels: Record<ObservationCategory, string> = {
-  visitor_pressure: 'Visitor pressure', parking_pressure: 'Parking pressure', path_condition: 'Path condition',
-  litter: 'Litter', infrastructure_condition: 'Infrastructure', signage_condition: 'Signage',
-  accessibility_barrier: 'Accessibility', visitor_management: 'Visitor management', other: 'Other',
-};
 const categories = Object.keys(categoryLabels) as ObservationCategory[];
 const assetTypes: AssetType[] = ['trailhead', 'car_park', 'viewpoint', 'visitor_centre', 'path_segment', 'public_space', 'other'];
 const emptyEvidence: EvidenceForm = { method: 'OBSERVED', measuredValue: '', measuredUnit: '', measuredContext: '', reportedSource: '' };
-
-function readable(value: string): string {
-  return value.toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
 
 function formatTime(value: string): string {
   const date = new Date(value);
@@ -104,6 +102,7 @@ export function App() {
       {screen.name === 'home' && <HomeScreen revision={revision} go={go} changed={changed} fail={fail} />}
       {screen.name === 'session' && <SessionScreen sessionId={screen.sessionId} revision={revision} go={go} changed={changed} fail={fail} canUndo={lastDeleted?.sessionId === screen.sessionId} undoDelete={undoDelete} />}
       {screen.name === 'capture' && <CaptureScreen sessionId={screen.sessionId} go={go} changed={changed} fail={fail} />}
+      {screen.name === 'map' && <MapScreen sessionId={screen.sessionId} revision={revision} go={go} changed={changed} fail={fail} />}
       {screen.name === 'detail' && <DetailScreen sessionId={screen.sessionId} observationId={screen.observationId} go={go} changed={changed} fail={fail} deleted={(id) => setLastDeleted({ id, sessionId: screen.sessionId })} />}
       {screen.name === 'export' && <ExportScreen sessionId={screen.sessionId} go={go} changed={changed} fail={fail} />}
     </main>
@@ -168,13 +167,36 @@ function SessionScreen({ sessionId, revision, go, changed, fail, canUndo, undoDe
   const closeSession = async () => { if (!confirm('Close this session? Existing observations remain available and exportable.')) return; try { await repositories.closeSession(sessionId); changed('Session closed.'); } catch (cause) { fail(cause); } };
   if (!session) return <section className="page"><p>Opening local session…</p></section>;
   return <section className="page session-page">
-    <button className="back" onClick={() => go({ name: 'home' })}>← Sessions</button><div className="session-title"><div><div className="eyebrow">{session.status} session</div><h1>{session.title}</h1><p>{observations.length} observations · {assets.length} assets</p></div><button className="secondary" onClick={() => go({ name: 'export', sessionId })}>Export & backup</button></div>
+    <button className="back" onClick={() => go({ name: 'home' })}>← Sessions</button><div className="session-title"><div><div className="eyebrow">{session.status} session</div><h1>{session.title}</h1><p>{observations.length} observations · {assets.length} assets</p></div><div className="session-title-actions"><button className="secondary" onClick={() => go({ name: 'map', sessionId })}>Map</button><button className="secondary" onClick={() => go({ name: 'export', sessionId })}>Export & backup</button></div></div>
     {canUndo && <div className="undo">Observation removed. <button onClick={() => void undoDelete()}>Undo</button></div>}
     <div className="section-heading"><h2>Observations</h2></div>
     {observations.length === 0 ? <div className="empty"><strong>No observations yet.</strong><span>Use the capture button to record the first one.</span></div> : <div className="list">{observations.map((observation) => <button className="observation-card" key={observation.id} onClick={() => go({ name: 'detail', sessionId, observationId: observation.id })}><div className="observation-icon">{categoryLabels[observation.observation.category].slice(0, 1)}</div><div><strong>{categoryLabels[observation.observation.category]}</strong><span>{observation.observation.value ? readable(observation.observation.value) : observation.note || 'Free observation'}</span><small>{formatTime(observation.capturedAt)} · {observation.capturedLocation.locationStatus === 'CAPTURED' ? `±${Math.round(observation.capturedLocation.accuracyMeters ?? 0)}m` : `GPS ${readable(observation.capturedLocation.locationStatus)}`}{mediaCounts[observation.id] && summarizeMedia(mediaCounts[observation.id]!) ? ` · ${summarizeMedia(mediaCounts[observation.id]!)}` : ''}{observation.edited ? ` · Edited ×${observation.editCount}` : ''}</small></div><span aria-hidden="true">›</span></button>)}</div>}
     <details className="card assets-panel"><summary>Known assets ({assets.length})</summary>{assets.length > 0 && <ul>{assets.map((asset) => <li key={asset.id}><strong>{asset.name}</strong><span>{asset.assetType ? readable(asset.assetType) : 'Unclassified'}{asset.latitude !== null ? ` · ${asset.latitude.toFixed(5)}, ${asset.longitude?.toFixed(5)}` : ' · No coordinates'}</span></li>)}</ul>}<div className="asset-form"><input value={assetName} onChange={(event) => setAssetName(event.target.value)} placeholder="Asset name" aria-label="Asset name" /><select value={assetType} onChange={(event) => setAssetType(event.target.value as AssetType)} aria-label="Asset type">{assetTypes.map((type) => <option key={type} value={type}>{readable(type)}</option>)}</select><button className="secondary" disabled={busy || !assetName.trim()} onClick={() => void dropAsset()}>{busy ? 'Getting GPS…' : '+ Drop asset here'}</button></div></details>
     <div className="session-actions">{session.status === 'active' && <button className="ghost danger-text" onClick={() => void closeSession()}>Close session</button>}</div>
     {session.status === 'active' ? <button className="capture-bar" onClick={() => go({ name: 'capture', sessionId })}>+ New observation</button> : <div className="closed-bar">Session closed · review or export existing evidence</div>}
+  </section>;
+}
+
+function MapScreen({ sessionId, revision, go, fail }: SharedProps & { sessionId: Uuid; revision: number }) {
+  const [session, setSession] = useState<FieldSession | null>(null);
+  const [observations, setObservations] = useState<Observation[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    let active = true; setLoading(true);
+    void Promise.all([repositories.getSession(sessionId), repositories.listObservations(sessionId), repositories.listAssets(sessionId)])
+      .then(([nextSession, nextObservations, nextAssets]) => {
+        if (!active) return;
+        if (!nextSession) throw new Error(`Session ${sessionId} was not found on this device.`);
+        setSession(nextSession); setObservations(nextObservations); setAssets(nextAssets); setLoading(false);
+      })
+      .catch((cause: unknown) => { if (active) { setLoading(false); fail(cause); } });
+    return () => { active = false; };
+  }, [fail, revision, sessionId]);
+  return <section className="page map-page">
+    <button className="back" onClick={() => go({ name: 'session', sessionId })}>← Session</button>
+    <div className="map-heading"><div className="eyebrow">Spatial view · online basemap</div><h1>{session?.title ?? 'Field map'}</h1><p className="muted">Tap a point to inspect it. Adjusted observation pins are marked; raw GPS is never overwritten.</p></div>
+    {loading ? <p className="muted">Reading local data…</p> : <Suspense fallback={<div className="map-loading" role="status">Loading map…</div>}><FieldMap observations={observations} assets={assets} onOpenObservation={(id) => go({ name: 'detail', sessionId, observationId: id })} /></Suspense>}
   </section>;
 }
 

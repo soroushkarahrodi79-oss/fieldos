@@ -9,6 +9,12 @@ const base = process.env.FIELDOS_BASE_PATH ?? '/';
 
 export default defineConfig({
   base,
+  build: {
+    // MapLibre is intentionally isolated in its own lazy-loaded chunk (see FieldMap's dynamic
+    // import), so the core offline capture shell stays small. That vendor chunk is legitimately
+    // large; raise the advisory limit rather than emit noise for an already-code-split bundle.
+    chunkSizeWarningLimit: 900,
+  },
   plugins: [
     react(),
     VitePWA({
