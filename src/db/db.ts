@@ -1,5 +1,11 @@
 import Dexie, { type EntityTable } from 'dexie';
-import type { Asset, FieldSession, MediaAttachment, Observation } from '../domain/types';
+import type {
+  Asset,
+  FieldSession,
+  MediaAttachment,
+  Observation,
+  ObservationAuditEntry,
+} from '../domain/types';
 
 /**
  * FieldOS local database (IndexedDB via Dexie).
@@ -14,6 +20,7 @@ export class FieldOsDb extends Dexie {
   assets!: EntityTable<Asset, 'id'>;
   observations!: EntityTable<Observation, 'id'>;
   media!: EntityTable<MediaAttachment, 'id'>;
+  observationAudit!: EntityTable<ObservationAuditEntry, 'id'>;
 
   constructor(name = 'fieldos') {
     super(name);
@@ -25,6 +32,22 @@ export class FieldOsDb extends Dexie {
       // at most a few hundred observations).
       observations: 'id, sessionId, createdAt, capturedAt',
       media: 'id, observationId',
+    });
+    // Version 2 (P1-5): add the append-only `observationAudit` store. This is a real IndexedDB
+    // version upgrade, NOT an additive-nullable-field change, because it introduces a new object
+    // store. All version-1 stores are re-declared unchanged so their existing data is preserved
+    // (Dexie deletes only stores that are OMITTED from a version). There is no `.upgrade()` step:
+    // the four original stores keep their rows verbatim and the new store simply starts empty.
+    // No historical audit entries are fabricated for observations created before this version.
+    this.version(2).stores({
+      fieldSessions: 'id, status, createdAt',
+      assets: 'id, sessionId, source',
+      observations: 'id, sessionId, createdAt, capturedAt',
+      media: 'id, observationId',
+      // Compound [observationId+sequence] gives deterministic per-observation ordering and a
+      // cheap "next sequence" lookup. `occurredAt` supports chronological session-wide reads.
+      observationAudit:
+        'id, observationId, sessionId, [observationId+sequence], occurredAt',
     });
   }
 }

@@ -34,7 +34,7 @@ Legend: **R** = required, **O** = optional. Types are logical (stored as JSON in
 | Field | Type | R/O | Allowed / notes | Provenance meaning |
 |------|------|-----|-----------------|--------------------|
 | `id` | UUIDv4 string | R | `crypto.randomUUID()` | stable identity across export/backup |
-| `schemaVersion` | int | R | current `2`; legacy `1` remains readable | lets exports be interpreted later |
+| `schemaVersion` | int | R | current `3`; legacy `1`/`2` remain readable | lets exports be interpreted later |
 | `title` | string | R | free text, e.g. "Lakeside trail, Aug morning" | human label |
 | `purpose` | string | O | free text | context for later readers |
 | `observerName` | string | O | free text; **self-declared, unverified** | closest we get to "who"; P0 has no auth |
@@ -54,7 +54,7 @@ Legend: **R** = required, **O** = optional. Types are logical (stored as JSON in
 | Field | Type | R/O | Allowed / notes | Provenance meaning |
 |------|------|-----|-----------------|--------------------|
 | `id` | UUIDv4 string | R | | identity |
-| `schemaVersion` | int | R | current `2`; legacy `1` remains readable | |
+| `schemaVersion` | int | R | current `3`; legacy `1`/`2` remain readable | |
 | `sessionId` | UUIDv4 | O | may be reusable across sessions | link |
 | `name` | string | R | free text | label |
 | `assetType` | enum | O | `trailhead` \| `car_park` \| `viewpoint` \| `visitor_centre` \| `path_segment` \| `public_space` \| `other` | coarse classification |
@@ -114,7 +114,7 @@ If `locationStatus !== CAPTURED`, coordinates are `null` — we **never fabricat
 | Field | Type | R/O | Allowed / notes |
 |------|------|-----|-----------------|
 | `id` | UUIDv4 string | R | |
-| `schemaVersion` | int | R | current `2`; legacy `1` remains readable |
+| `schemaVersion` | int | R | current `3`; legacy `1`/`2` remain readable |
 | `sessionId` | UUIDv4 | R | belongs to a session |
 | `assetId` | UUIDv4 \| null | O | null for ad-hoc points |
 | **— Capture block (IMMUTABLE) —** | | | |
@@ -205,7 +205,7 @@ type Evidence =
 | Field | Type | R/O | Allowed / notes |
 |------|------|-----|-----------------|
 | `id` | UUIDv4 string | R | |
-| `schemaVersion` | int | R | current `2`; legacy `1` remains readable |
+| `schemaVersion` | int | R | current `3`; legacy `1`/`2` remain readable |
 | `observationId` | UUIDv4 | R | owner |
 | `kind` | enum | R | `photo` (MVP) \| `audio` (P1) |
 | `blob` | Blob | R | stored in IndexedDB (raw evidence, not re-encoded) |
@@ -220,6 +220,60 @@ observation save (an observation is valid with no media).
 
 ---
 
+## Entity: ObservationAuditEntry  *(P1-5 — append-only revision history)*
+
+Answers **"what exactly changed in this observation, when, and what was the previous state?"** —
+something `editCount` alone cannot, because a single counter cannot say *what* changed or preserve
+the prior values. The log is **append-only at the application layer**: the repository exposes only
+reads (`listObservationAuditEntries`, `listSessionAuditEntries`) plus internal creation from
+legitimate mutations. There is no public update/delete/replace.
+
+**What it is:** append-only *local* observation revision history.
+**What it is NOT:** not a cryptographic chain of custody, not tamper-proof, not digitally signed,
+not authenticated authorship (P0 has no accounts). Anyone with local IndexedDB access could alter
+the store directly; the guarantee is only that FieldOS's own APIs never rewrite history.
+
+| Field | Type | R/O | Allowed / notes |
+|------|------|-----|-----------------|
+| `id` | UUIDv4 string | R | |
+| `schemaVersion` | int | R | current `3` |
+| `observationId` | UUIDv4 | R | owner observation |
+| `sessionId` | UUIDv4 | R | denormalized for efficient session-level export |
+| `sequence` | int | R | **1-based, strictly increasing per observation**; no gaps, no duplicates |
+| `eventType` | enum | R | `CREATED` \| `INTERPRETATION_UPDATED` \| `LOCATION_ADJUSTED` \| `SOFT_DELETED` \| `RESTORED` |
+| `occurredAt` | ISO-8601 | R | when the change committed |
+| `before` | `ObservationAuditState` \| null | R | prior mutable state; **null only for `CREATED`** |
+| `after` | `ObservationAuditState` | R | resulting mutable state |
+
+`ObservationAuditState` is a snapshot of the **mutable** state only:
+`{ schemaVersion, assetId, observation, evidence, note, locationAdjustment, deleted, updatedAt,
+editCount, edited }`.
+
+**Snapshot boundary (deliberate):** the immutable raw capture block (`capturedAt`, raw
+`capturedLocation`) is **not** copied into snapshots. Those values are write-once on the canonical
+Observation and can never change, so the log preserves only what legitimately can. A separate test
+proves mutations never alter the raw capture, so the boundary loses nothing.
+
+**Atomicity:** every audited mutation writes the observation row and its audit entry in **one Dexie
+read-write transaction** over `observations` + `observationAudit`. If either write fails, neither
+commits — no observation without its origin event, no audit entry without its observation. Storage
+failures surface as `StoragePersistenceError` (no false success).
+
+**`editCount` vs audit:** `editCount` keeps its existing meaning — +1 per interpretation edit or
+location adjustment, unchanged by delete/restore. It is a cheap headline count, **not** a duplicate
+of the audit-entry count. The audit log is the complete event history; the two are not forced to
+agree (e.g. `SOFT_DELETED`/`RESTORED` add audit entries without touching `editCount`).
+
+**Legacy boundary:** observations created before P1-5 have **no** history. No `CREATED` event is
+fabricated for them — reading, listing, opening, and exporting never create entries. Their history
+begins at `sequence: 1` with the first *real* mutation after audit logging existed (an
+`INTERPRETATION_UPDATED` or `LOCATION_ADJUSTED`, honestly labelled — never a back-dated `CREATED`).
+
+**No-op guard:** repeating a soft delete on an already-deleted record (or restoring a live one) is a
+no-op that writes nothing — no misleading duplicate event.
+
+---
+
 ## Cross-cutting provenance guarantees
 
 For any observation a later reader can answer:
@@ -228,7 +282,9 @@ For any observation a later reader can answer:
   derived; accuracy, altitude accuracy, heading, speed, and `locationStatus` remain honest raw metadata.
 - **When?** → `capturedAt` (never regenerated); `createdAt` vs `updatedAt` distinguish capture from edits.
 - **How known?** → `evidence.method` (OBSERVED/MEASURED/REPORTED).
-- **Modified?** → `edited` / `editCount` / `updatedAt`; capture block never mutated.
+- **Modified?** → `edited` / `editCount` / `updatedAt` (the at-a-glance summary), plus the full
+  **append-only revision history** in `ObservationAuditEntry` (what changed, when, previous state);
+  the capture block is never mutated and never appears in the log as though it were edited.
 
 Anything the app cannot honestly answer (verified identity, true time accuracy, derived values) is
 **left absent rather than faked**.
@@ -240,11 +296,17 @@ Anything the app cannot honestly answer (verified identity, true time accuracy, 
 Two distinct outputs. **Export ≠ backup when media exists.**
 
 ### DATA EXPORT (analysis / interoperability)
-- `observations.json` — canonical, full-fidelity FieldOS records (both location fixes, evidence, edit flags).
+- `observations.json` — canonical, full-fidelity FieldOS records (both location fixes, evidence, edit
+  flags) **plus the complete `auditEntries` revision history** for the session.
 - `observations.csv` — flat one-row-per-observation for spreadsheets (media referenced by id/filename).
 - `observations.geojson` — one `Feature` per observation; geometry = `effectiveLocation`;
   `properties` carry category, value, evidence method, `edited`, `locationSource`, raw accuracy,
   altitude accuracy, heading, speed, ids, and timestamps.
+
+> **Audit history lives in JSON only.** One observation maps to *many* revision events, so the audit
+> trail is carried in canonical JSON (and thus the full ZIP backup), **not** flattened into the
+> one-row-per-observation CSV/GeoJSON, where it would be lossy or misleading. A dedicated `audit.csv`
+> could be added later if a flat view is needed; it is out of scope for P1-5.
 
 ### Schema 2 compatibility decision
 
@@ -256,6 +318,21 @@ schema-1 records and backups therefore remain readable, while new canonical outp
 Read-only normalization leaves an entity labelled schema 1 and does not rewrite IndexedDB. If that
 normalized observation is later fully persisted through an interpretation edit or location
 adjustment, its entity `schemaVersion` is upgraded to the current schema version.
+
+### Schema 3 compatibility decision (P1-5)
+
+Schema 3 introduces a **new entity collection** (`ObservationAuditEntry`). Unlike schema 2, this
+**does** require a real Dexie database-version upgrade, because it adds a new IndexedDB object store
+(`observationAudit`). The two version numbers are distinct and move independently:
+
+- **Dexie/IndexedDB database version: 1 → 2** (physical store added).
+- **FieldOS logical schema version: 2 → 3** (canonical/exported shape gains the audit collection).
+
+The Dexie v2 upgrade re-declares all four original stores unchanged, so every existing row is
+preserved (Dexie deletes only omitted stores); the new store simply starts empty, with no
+`.upgrade()` step and no fabricated history. Canonical JSON gains an `auditEntries` array; parsing an
+older export that lacks it normalizes the field to `[]` (never inventing events). Existing schema-1
+and schema-2 records remain readable and are not rewritten merely because the app opens.
 
 CSV/GeoJSON are lossy for media (media is not embedded). That is why a separate backup exists.
 

@@ -20,8 +20,13 @@ Every P0 below is traced to the core workflow. If it isn't necessary for that wo
   field workflow passed its executed acceptance checks, including offline capture, tested
   close/reopen persistence, export, and backup, with no intended data loss. Exact counts and timing
   metrics were not recorded. See [docs/FIRST_FIELD_RUN.md](docs/FIRST_FIELD_RUN.md).
-- Next engineering state: evaluate **P1-5 append-only observation audit/revision history** before
-  maps, OPFS, or AI work. Keep the evaluation bounded and preserve the current immutable raw capture.
+- Delivered on 2026-08-31: **P1-5 append-only observation audit/revision history**. Each observation
+  now carries a durable `observationAudit` log (`CREATED`, `INTERPRETATION_UPDATED`,
+  `LOCATION_ADJUSTED`, `SOFT_DELETED`, `RESTORED`) written atomically with the observation in one
+  Dexie transaction (DB version 1 → 2; logical schema 2 → 3). Raw capture immutability is preserved,
+  no history is fabricated for legacy records, and canonical JSON / ZIP backup carry the full trail.
+  It is append-only local history — **not** cryptographic tamper-proofing. See DATA_MODEL.md.
+- Next engineering state: maps, OPFS, or AI work remain deferred and bounded by the product contract.
 - Post-MVP P1/P2 scope remains deferred unless the product contract is deliberately changed.
 
 ---
@@ -93,7 +98,12 @@ Every P0 below is traced to the core workflow. If it isn't necessary for that wo
   pending. See `docs/VOICE_NOTES_SMOKE_TEST.md` for the evidence boundary and remaining plan.
 - **P1-3** Import preloaded reference assets from GeoJSON (with `source: preloaded`).
 - **P1-4** Asset polygon geometry (beyond points).
-- **P1-5** Full revision/audit log per observation (append-only), beyond editCount.
+- **P1-5** Full revision/audit log per observation (append-only), beyond editCount. **Delivered
+  2026-08-31.** Transactional `observationAudit` store (Dexie DB v2, logical schema v3) recording
+  `CREATED` / `INTERPRETATION_UPDATED` / `LOCATION_ADJUSTED` / `SOFT_DELETED` / `RESTORED` with
+  before/after snapshots of mutable state (raw capture excluded and provably unchanged). No history
+  fabricated for legacy records; full trail in canonical JSON + ZIP backup; read-only History surface
+  on observation detail. Claim boundary: append-only local history, not cryptographic immutability.
 - **P1-6** Restore UI: re-import a full-session backup / canonical `observations.json` (the format is P0; the UI is P1).
 - **P1-7** Refine per-category value sets or add categories, if the first field test shows gaps.
 - **P1-8** Multiple photos per observation.

@@ -10,6 +10,7 @@ import { buildSessionBundle } from './export/bundle';
 import { extensionForMime } from './export/types';
 import { getStorageHealth, requestPersistence, type StorageHealth } from './storage/storageHealth';
 import { VoiceRecorder } from './components/VoiceRecorder';
+import { ObservationHistory } from './components/ObservationHistory';
 import { countMedia, summarizeMedia, type MediaCounts } from './media/mediaSummary';
 import type { AudioRecording } from './media/audioRecorder';
 import { APP_VERSION } from './version';
@@ -239,6 +240,7 @@ function DetailScreen({ sessionId, observationId, go, changed, fail, deleted }: 
     <PhotoGallery media={media} />
     <VoiceEvidence media={media} />
     <section className="card"><div className="section-heading"><h2>Location adjustment</h2><button className="ghost" onClick={() => setAdjusting((current) => !current)}>{adjusting ? 'Cancel' : observation.locationAdjustment ? 'Update' : 'Adjust'}</button></div>{observation.locationAdjustment && <p className="muted">Effective location: {observation.locationAdjustment.latitude}, {observation.locationAdjustment.longitude}. Raw GPS remains unchanged.</p>}{adjusting && <div className="form-stack"><div className="two-column"><label>Latitude<input inputMode="decimal" value={latitude} onChange={(event) => setLatitude(event.target.value)} /></label><label>Longitude<input inputMode="decimal" value={longitude} onChange={(event) => setLongitude(event.target.value)} /></label></div><label>Reason <span>optional</span><input value={reason} onChange={(event) => setReason(event.target.value)} /></label><button className="secondary" onClick={() => void saveAdjustment()}>Save separate adjustment</button></div>}</section>
+    <ObservationHistory observationId={observation.id} refreshToken={observation.updatedAt} />
     {observation.edited && <p className="audit">Edited ×{observation.editCount} · last change {formatTime(observation.updatedAt)}</p>}<button className="ghost danger-text" onClick={() => void remove()}>Remove observation</button>
   </section>;
 }

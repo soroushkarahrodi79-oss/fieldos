@@ -14,6 +14,8 @@ export interface BackupManifest {
   sessionId: string;
   observationCount: number;
   mediaCount: number;
+  /** Total append-only revision-history entries across the session's observations. */
+  auditEntryCount: number;
   appVersion: string;
 }
 
@@ -54,6 +56,7 @@ function manifestFor(bundle: SessionBundle): BackupManifest {
     sessionId: bundle.session.id,
     observationCount: bundle.observations.length,
     mediaCount: bundle.media.length,
+    auditEntryCount: bundle.auditEntries.length,
     appVersion: bundle.appVersion,
   };
 }

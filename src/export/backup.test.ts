@@ -33,7 +33,7 @@ describe('full-session ZIP backup', () => {
     expect(manifest.sessionId).toBe(fixture.sessionId);
     expect(manifest.observationCount).toBe(10);
     expect(manifest.mediaCount).toBe(3);
-    expect(manifest.fieldosSchemaVersion).toBe(2);
+    expect(manifest.fieldosSchemaVersion).toBe(3);
     expect(manifest.appVersion).toBe('0.1.0');
     expect(typeof manifest.exportedAt).toBe('string');
     // The in-memory manifest matches the archived one.
@@ -77,5 +77,22 @@ describe('full-session ZIP backup', () => {
     expect(canonical.observations[0].capturedLocation.altitudeAccuracyMeters).toBe(4.5);
     expect(canonical.observations[0].capturedLocation.headingDegrees).toBe(127);
     expect(canonical.observations[0].capturedLocation.speedMetersPerSecond).toBe(1.8);
+  });
+
+  it('preserves the append-only audit history in canonical JSON inside the ZIP', async () => {
+    const { repos } = makeTestRepos();
+    const fixture = await seedFixture(repos);
+    const backup = await buildSessionBackup(repos, fixture.sessionId);
+
+    // Manifest reports the audit-entry count (10 CREATED + 1 LOCATION_ADJUSTED = 11).
+    expect(backup.manifest.auditEntryCount).toBe(11);
+
+    const files = unzipSync(backup.zipBytes);
+    const canonical = JSON.parse(strFromU8(files['observations.json']!));
+    expect(canonical.auditEntries).toHaveLength(11);
+    expect(canonical.auditEntries.some((e: { eventType: string }) => e.eventType === 'CREATED')).toBe(true);
+    expect(canonical.auditEntries.some((e: { eventType: string }) => e.eventType === 'LOCATION_ADJUSTED')).toBe(true);
+    // CSV / GeoJSON stay one-row-per-observation and are NOT expanded into audit rows.
+    expect(strFromU8(files['observations.csv']!).split('\r\n')).toHaveLength(11); // header + 10
   });
 });
