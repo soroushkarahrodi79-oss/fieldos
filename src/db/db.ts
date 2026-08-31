@@ -6,7 +6,8 @@ import type { Asset, FieldSession, MediaAttachment, Observation } from '../domai
  *
  * Dexie earns its place by giving explicit, versioned migrations and clean transactions
  * over the raw IndexedDB API. Schema strings list only the INDEXED properties; full objects
- * are stored regardless. Bump the Dexie version and add an upgrade path when the shape changes.
+ * are stored regardless. Bump the Dexie version and add an upgrade path when stores or indexes
+ * change. Additive nullable object fields can be normalized at the repository boundary.
  */
 export class FieldOsDb extends Dexie {
   fieldSessions!: EntityTable<FieldSession, 'id'>;

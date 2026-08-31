@@ -1,6 +1,7 @@
 import { FieldOsDb, db as defaultDb } from './db';
 import { newId } from '../domain/ids';
 import { nowIso } from '../domain/time';
+import { normalizeCapturedLocation } from '../domain/geolocation';
 import { SCHEMA_VERSION } from '../version';
 import type {
   Asset,
@@ -39,6 +40,14 @@ async function persist<T>(operation: string, fn: () => Promise<T>): Promise<T> {
     // Surface, never swallow. The record is not saved.
     throw new StoragePersistenceError(operation, cause);
   }
+}
+
+/** Present old IndexedDB observations through today's deterministic domain shape. */
+function normalizeObservation(observation: Observation): Observation {
+  return {
+    ...observation,
+    capturedLocation: normalizeCapturedLocation(observation.capturedLocation),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -164,7 +173,7 @@ export class Repositories {
       assetId: input.assetId ?? null,
       // Capture block — written once, never mutated after this.
       capturedAt: input.capturedAt ?? ts,
-      capturedLocation: input.capturedLocation,
+      capturedLocation: normalizeCapturedLocation(input.capturedLocation),
       // Interpretation block.
       observation: input.observation,
       evidence: input.evidence,
@@ -181,8 +190,9 @@ export class Repositories {
     return observation;
   }
 
-  getObservation(id: Uuid): Promise<Observation | undefined> {
-    return this.database.observations.get(id);
+  async getObservation(id: Uuid): Promise<Observation | undefined> {
+    const observation = await this.database.observations.get(id);
+    return observation ? normalizeObservation(observation) : undefined;
   }
 
   /** Live (non-deleted) observations in a session, newest first. */
@@ -194,7 +204,8 @@ export class Repositories {
       .where('sessionId')
       .equals(sessionId)
       .toArray();
-    const filtered = opts.includeDeleted ? rows : rows.filter((o) => !o.deleted);
+    const normalized = rows.map(normalizeObservation);
+    const filtered = opts.includeDeleted ? normalized : normalized.filter((o) => !o.deleted);
     return filtered.sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
   }
 
@@ -206,7 +217,8 @@ export class Repositories {
     id: Uuid,
     patch: ObservationInterpretationPatch,
   ): Promise<Observation> {
-    const existing = await this.database.observations.get(id);
+    const stored = await this.database.observations.get(id);
+    const existing = stored ? normalizeObservation(stored) : undefined;
     if (!existing) throw new Error(`Observation ${id} not found`);
 
     const updated: Observation = {
@@ -241,7 +253,8 @@ export class Repositories {
     id: Uuid,
     adjustment: { latitude: number; longitude: number; reason?: string | null },
   ): Promise<Observation> {
-    const existing = await this.database.observations.get(id);
+    const stored = await this.database.observations.get(id);
+    const existing = stored ? normalizeObservation(stored) : undefined;
     if (!existing) throw new Error(`Observation ${id} not found`);
 
     const updated: Observation = {

@@ -1,4 +1,5 @@
 import type { SessionBundle } from './types';
+import { normalizeCapturedLocation } from '../domain/geolocation';
 
 /**
  * Canonical JSON serialization of a session bundle.
@@ -12,5 +13,12 @@ export function serializeSessionJson(bundle: SessionBundle): string {
 
 /** Parse a canonical JSON export back into a bundle (basis for a future restore). */
 export function parseSessionJson(text: string): SessionBundle {
-  return JSON.parse(text) as SessionBundle;
+  const bundle = JSON.parse(text) as SessionBundle;
+  return {
+    ...bundle,
+    observations: bundle.observations.map((observation) => ({
+      ...observation,
+      capturedLocation: normalizeCapturedLocation(observation.capturedLocation),
+    })),
+  };
 }

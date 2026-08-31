@@ -28,7 +28,10 @@ function goodFix(minute: number, lat: number, lon: number, accuracy = 6): Captur
     latitude: lat,
     longitude: lon,
     accuracyMeters: accuracy,
-    altitudeMeters: null,
+    altitudeMeters: 667,
+    altitudeAccuracyMeters: 4.5,
+    headingDegrees: 127,
+    speedMetersPerSecond: 1.8,
     locationStatus: 'CAPTURED',
     capturedAt: capturedAt(minute),
   };
@@ -40,6 +43,9 @@ function noFix(minute: number, status: 'TIMEOUT' | 'DENIED' | 'UNAVAILABLE'): Ca
     longitude: null,
     accuracyMeters: null,
     altitudeMeters: null,
+    altitudeAccuracyMeters: null,
+    headingDegrees: null,
+    speedMetersPerSecond: null,
     locationStatus: status,
     capturedAt: capturedAt(minute),
   };

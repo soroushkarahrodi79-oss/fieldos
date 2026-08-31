@@ -34,7 +34,7 @@ Legend: **R** = required, **O** = optional. Types are logical (stored as JSON in
 | Field | Type | R/O | Allowed / notes | Provenance meaning |
 |------|------|-----|-----------------|--------------------|
 | `id` | UUIDv4 string | R | `crypto.randomUUID()` | stable identity across export/backup |
-| `schemaVersion` | int | R | starts at `1` | lets exports be interpreted later |
+| `schemaVersion` | int | R | current `2`; legacy `1` remains readable | lets exports be interpreted later |
 | `title` | string | R | free text, e.g. "Lakeside trail, Aug morning" | human label |
 | `purpose` | string | O | free text | context for later readers |
 | `observerName` | string | O | free text; **self-declared, unverified** | closest we get to "who"; P0 has no auth |
@@ -54,7 +54,7 @@ Legend: **R** = required, **O** = optional. Types are logical (stored as JSON in
 | Field | Type | R/O | Allowed / notes | Provenance meaning |
 |------|------|-----|-----------------|--------------------|
 | `id` | UUIDv4 string | R | | identity |
-| `schemaVersion` | int | R | `1` | |
+| `schemaVersion` | int | R | current `2`; legacy `1` remains readable | |
 | `sessionId` | UUIDv4 | O | may be reusable across sessions | link |
 | `name` | string | R | free text | label |
 | `assetType` | enum | O | `trailhead` \| `car_park` \| `viewpoint` \| `visitor_centre` \| `path_segment` \| `public_space` \| `other` | coarse classification |
@@ -79,6 +79,9 @@ Written once at capture. **Never rewritten.**
 | `longitude` | number \| null | R | null when no fix |
 | `accuracyMeters` | number \| null | R | from Geolocation `coords.accuracy`; **honest uncertainty, never dropped** |
 | `altitudeMeters` | number \| null | O | if provided |
+| `altitudeAccuracyMeters` | number \| null | R | raw Geolocation `coords.altitudeAccuracy`; never calculated |
+| `headingDegrees` | number \| null | R | raw Geolocation `coords.heading`; never estimated |
+| `speedMetersPerSecond` | number \| null | R | raw Geolocation `coords.speed`; never inferred from observations |
 | `locationStatus` | enum | R | `CAPTURED` \| `DENIED` \| `UNAVAILABLE` \| `TIMEOUT` |
 | `capturedAt` | ISO-8601 | R | when the fix was taken |
 
@@ -100,6 +103,9 @@ If `locationStatus !== CAPTURED`, coordinates are `null` — we **never fabricat
 - **`effectiveLocation` is DERIVED, not stored** — a helper returns `locationAdjustment` if present,
   else `capturedLocation`. Export records which was used (`locationSource: captured | adjusted`).
   It is derived (not persisted) so it can never go stale or overwrite the original.
+- Altitude accuracy, heading, and speed are raw device metadata. Browser `null` remains `null`;
+  FieldOS does not calculate, estimate, or replace these values, and location adjustment cannot
+  overwrite them.
 
 ---
 
@@ -108,7 +114,7 @@ If `locationStatus !== CAPTURED`, coordinates are `null` — we **never fabricat
 | Field | Type | R/O | Allowed / notes |
 |------|------|-----|-----------------|
 | `id` | UUIDv4 string | R | |
-| `schemaVersion` | int | R | `1` |
+| `schemaVersion` | int | R | current `2`; legacy `1` remains readable |
 | `sessionId` | UUIDv4 | R | belongs to a session |
 | `assetId` | UUIDv4 \| null | O | null for ad-hoc points |
 | **— Capture block (IMMUTABLE) —** | | | |
@@ -199,7 +205,7 @@ type Evidence =
 | Field | Type | R/O | Allowed / notes |
 |------|------|-----|-----------------|
 | `id` | UUIDv4 string | R | |
-| `schemaVersion` | int | R | `1` |
+| `schemaVersion` | int | R | current `2`; legacy `1` remains readable |
 | `observationId` | UUIDv4 | R | owner |
 | `kind` | enum | R | `photo` (MVP) \| `audio` (P1) |
 | `blob` | Blob | R | stored in IndexedDB (raw evidence, not re-encoded) |
@@ -218,7 +224,8 @@ observation save (an observation is valid with no media).
 
 For any observation a later reader can answer:
 - **Who?** → `session.observerName` (self-declared, unverified — never overstated).
-- **Where?** → `capturedLocation` (raw, immutable) and/or `locationAdjustment`; `effectiveLocation` derived; `accuracyMeters` + `locationStatus` always honest.
+- **Where?** → `capturedLocation` (raw, immutable) and/or `locationAdjustment`; `effectiveLocation`
+  derived; accuracy, altitude accuracy, heading, speed, and `locationStatus` remain honest raw metadata.
 - **When?** → `capturedAt` (never regenerated); `createdAt` vs `updatedAt` distinguish capture from edits.
 - **How known?** → `evidence.method` (OBSERVED/MEASURED/REPORTED).
 - **Modified?** → `edited` / `editCount` / `updatedAt`; capture block never mutated.
@@ -236,7 +243,16 @@ Two distinct outputs. **Export ≠ backup when media exists.**
 - `observations.json` — canonical, full-fidelity FieldOS records (both location fixes, evidence, edit flags).
 - `observations.csv` — flat one-row-per-observation for spreadsheets (media referenced by id/filename).
 - `observations.geojson` — one `Feature` per observation; geometry = `effectiveLocation`;
-  `properties` carry category, value, evidence method, `edited`, `locationSource`, `accuracyMeters`, ids, timestamps.
+  `properties` carry category, value, evidence method, `edited`, `locationSource`, raw accuracy,
+  altitude accuracy, heading, speed, ids, and timestamps.
+
+### Schema 2 compatibility decision
+
+Schema 2 adds three nullable properties inside `CapturedLocation`. No Dexie database-version
+migration is required because no object store or index changes: IndexedDB stores the full object,
+and none of the new properties is indexed. Repository reads and canonical JSON parsing normalize an
+absent legacy property to explicit `null`. Real `0` and browser `null` values are preserved. Legacy
+schema-1 records and backups therefore remain readable, while new canonical output is deterministic.
 
 CSV/GeoJSON are lossy for media (media is not embedded). That is why a separate backup exists.
 
