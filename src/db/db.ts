@@ -44,10 +44,14 @@ export class FieldOsDb extends Dexie {
       assets: 'id, sessionId, source',
       observations: 'id, sessionId, createdAt, capturedAt',
       media: 'id, observationId',
-      // Compound [observationId+sequence] gives deterministic per-observation ordering and a
-      // cheap "next sequence" lookup. `occurredAt` supports chronological session-wide reads.
+      // UNIQUE compound &[observationId+sequence]: gives deterministic per-observation ordering, a
+      // cheap "next sequence" lookup, AND enforces the no-duplicate-sequence invariant in IndexedDB
+      // itself — a second entry with the same (observationId, sequence) is rejected by the database,
+      // not merely by the repository's max+1 logic. Safe to declare unique here because the store is
+      // introduced fresh in DB version 2 with no legacy audit rows that could violate it.
+      // `occurredAt` supports chronological session-wide reads.
       observationAudit:
-        'id, observationId, sessionId, [observationId+sequence], occurredAt',
+        'id, observationId, sessionId, &[observationId+sequence], occurredAt',
     });
   }
 }

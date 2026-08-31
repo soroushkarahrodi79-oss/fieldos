@@ -239,7 +239,7 @@ the store directly; the guarantee is only that FieldOS's own APIs never rewrite 
 | `schemaVersion` | int | R | current `3` |
 | `observationId` | UUIDv4 | R | owner observation |
 | `sessionId` | UUIDv4 | R | denormalized for efficient session-level export |
-| `sequence` | int | R | **1-based, strictly increasing per observation**; no gaps, no duplicates |
+| `sequence` | int | R | **1-based, strictly increasing per observation**; no gaps, no duplicates (see *Uniqueness* below) |
 | `eventType` | enum | R | `CREATED` \| `INTERPRETATION_UPDATED` \| `LOCATION_ADJUSTED` \| `SOFT_DELETED` \| `RESTORED` |
 | `occurredAt` | ISO-8601 | R | when the change committed |
 | `before` | `ObservationAuditState` \| null | R | prior mutable state; **null only for `CREATED`** |
@@ -256,8 +256,17 @@ proves mutations never alter the raw capture, so the boundary loses nothing.
 
 **Atomicity:** every audited mutation writes the observation row and its audit entry in **one Dexie
 read-write transaction** over `observations` + `observationAudit`. If either write fails, neither
-commits — no observation without its origin event, no audit entry without its observation. Storage
-failures surface as `StoragePersistenceError` (no false success).
+commits — no observation without its origin event, no audit entry without its observation. Genuine
+storage failures surface as `StoragePersistenceError` (no false success); a mutation targeting a
+missing record throws a distinct `ObservationNotFoundError` (a domain outcome, never masked as a
+persistence failure), still raised inside the transaction so nothing is written.
+
+**Uniqueness of `(observationId, sequence)`:** enforced at **two** layers. (1) *Application logic* —
+the repository computes the next sequence as `max(existing) + 1` inside the same transaction. (2)
+*IndexedDB* — the `observationAudit` store declares a **unique** compound index
+`&[observationId+sequence]`, so the database itself rejects any second entry with a colliding
+`(observationId, sequence)`, even one written outside the normal append path. Declaring it unique is
+safe because the store is created fresh in Dexie DB version 2 with no legacy audit rows.
 
 **`editCount` vs audit:** `editCount` keeps its existing meaning — +1 per interpretation edit or
 location adjustment, unchanged by delete/restore. It is a cheap headline count, **not** a duplicate

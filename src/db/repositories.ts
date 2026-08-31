@@ -37,11 +37,33 @@ export class StoragePersistenceError extends Error {
   }
 }
 
+/**
+ * A deterministic "this record does not exist" outcome — NOT a storage failure. It is thrown from
+ * inside a transaction (so atomicity is preserved) but must reach callers as itself, never masked
+ * as a `StoragePersistenceError`, whose meaning is reserved for genuine IndexedDB/write failures.
+ */
+export class ObservationNotFoundError extends Error {
+  readonly observationId: Uuid;
+  constructor(id: Uuid) {
+    super(`Observation ${id} not found`);
+    this.name = 'ObservationNotFoundError';
+    this.observationId = id;
+  }
+}
+
+/** Domain-level outcomes that are correct answers, not persistence failures — passed through as-is. */
+function isDomainError(cause: unknown): boolean {
+  return cause instanceof ObservationNotFoundError;
+}
+
 async function persist<T>(operation: string, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (cause) {
-    // Surface, never swallow. The record is not saved.
+    // Known domain errors (e.g. not-found) are legitimate outcomes, not storage failures — re-throw
+    // them unchanged. Only actual IndexedDB/Dexie/write failures become a StoragePersistenceError,
+    // so that type keeps meaning "the write did not persist". Never swallow either.
+    if (isDomainError(cause)) throw cause;
     throw new StoragePersistenceError(operation, cause);
   }
 }
@@ -244,7 +266,7 @@ export class Repositories {
         async () => {
           const stored = await this.database.observations.get(id);
           const existing = stored ? normalizeObservation(stored) : undefined;
-          if (!existing) throw new Error(`Observation ${id} not found`);
+          if (!existing) throw new ObservationNotFoundError(id);
 
           const before = snapshotObservationForAudit(existing);
           const updated: Observation = {
@@ -291,7 +313,7 @@ export class Repositories {
         async () => {
           const stored = await this.database.observations.get(id);
           const existing = stored ? normalizeObservation(stored) : undefined;
-          if (!existing) throw new Error(`Observation ${id} not found`);
+          if (!existing) throw new ObservationNotFoundError(id);
 
           // `before` retains the PREVIOUS adjustment (possibly null, or an earlier correction).
           // Re-adjusting therefore preserves the full A → B history across successive corrections.
@@ -348,7 +370,7 @@ export class Repositories {
         async () => {
           const stored = await this.database.observations.get(id);
           const existing = stored ? normalizeObservation(stored) : undefined;
-          if (!existing) throw new Error(`Observation ${id} not found`);
+          if (!existing) throw new ObservationNotFoundError(id);
           if (existing.deleted === deleted) return; // no-op — nothing to record.
 
           const before = snapshotObservationForAudit(existing);

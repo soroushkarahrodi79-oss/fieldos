@@ -144,8 +144,12 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
    state*. It is append-only **at the application layer** (no public update/delete) — deliberately
    **not** described as cryptographically tamper-proof, signed, or a legal chain of custody, since P0
    has no accounts, signatures, or remote anchoring. Every audited mutation writes the observation and
-   its audit entry in **one Dexie read-write transaction**; a failure rolls back both (surfaced as
-   `StoragePersistenceError`, never a false success). The immutable raw capture block is never copied
+   its audit entry in **one Dexie read-write transaction**; a genuine storage failure rolls back both
+   (surfaced as `StoragePersistenceError`), while a missing-record mutation throws a distinct
+   `ObservationNotFoundError` (a domain outcome, never masked as a persistence failure) — neither is
+   ever a false success. The per-observation `(observationId, sequence)` invariant is enforced twice:
+   by the repository's max+1 logic **and** by a unique `&[observationId+sequence]` IndexedDB compound
+   index that rejects duplicates at the database layer. The immutable raw capture block is never copied
    into snapshots and never appears as edited. Event sourcing remains out of scope: this is a targeted
    revision log over mutable fields, not a full event-sourced rebuild of every entity.
 5. **Durability is engineered and validated, not assumed.** Request `storage.persist()` on first

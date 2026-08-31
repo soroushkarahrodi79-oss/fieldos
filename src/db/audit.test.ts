@@ -1,7 +1,7 @@
 import Dexie from 'dexie';
 import { describe, expect, it, vi } from 'vitest';
 import { FieldOsDb } from './db';
-import { Repositories, StoragePersistenceError } from './repositories';
+import { ObservationNotFoundError, Repositories, StoragePersistenceError } from './repositories';
 import { makeTestRepos } from '../test/helpers';
 import type { CapturedLocation, Observation } from '../domain/types';
 
@@ -311,5 +311,86 @@ describe('observation audit — transactional atomicity (rollback)', () => {
     const entries = await repos.listObservationAuditEntries(observation.id);
     expect(entries.map((e) => e.eventType)).toEqual(['CREATED']);
     spy.mockRestore();
+  });
+});
+
+describe('observation audit — not-found error semantics', () => {
+  const MISSING = '00000000-0000-4000-8000-000000000000';
+
+  const mutations: Array<[string, (repos: Repositories) => Promise<unknown>]> = [
+    ['updateInterpretation', (repos) => repos.updateInterpretation(MISSING, { note: 'x' })],
+    ['adjustLocation', (repos) => repos.adjustLocation(MISSING, { latitude: 1, longitude: 2 })],
+    ['softDeleteObservation', (repos) => repos.softDeleteObservation(MISSING)],
+    ['restoreObservation', (repos) => repos.restoreObservation(MISSING)],
+  ];
+
+  it.each(mutations)(
+    '%s on a nonexistent observation throws ObservationNotFoundError, not StoragePersistenceError',
+    async (_name, run) => {
+      const { repos, db } = makeTestRepos();
+
+      await expect(run(repos)).rejects.toBeInstanceOf(ObservationNotFoundError);
+      // A missing record is a domain outcome, NOT a persistence failure.
+      await expect(run(repos)).rejects.not.toBeInstanceOf(StoragePersistenceError);
+
+      // No audit entry created and no observation written by the failed lookup.
+      expect(await db.observationAudit.count()).toBe(0);
+      expect(await db.observations.count()).toBe(0);
+    },
+  );
+
+  it('carries the missing id and a readable message', async () => {
+    const { repos } = makeTestRepos();
+    const error = await repos.softDeleteObservation(MISSING).catch((cause: unknown) => cause);
+    expect(error).toBeInstanceOf(ObservationNotFoundError);
+    expect((error as ObservationNotFoundError).observationId).toBe(MISSING);
+    expect((error as Error).message).toContain(MISSING);
+  });
+
+  it('still wraps a genuine storage/audit write failure as StoragePersistenceError', async () => {
+    // Guards the boundary: the domain-error passthrough must NOT let real failures leak unwrapped.
+    const { repos, db } = makeTestRepos();
+    const { observation } = await newObservation(repos);
+    const spy = vi.spyOn(db.observationAudit, 'add').mockRejectedValueOnce(new Error('audit IO failure'));
+
+    const error = await repos.adjustLocation(observation.id, { latitude: 1, longitude: 2 }).catch((c: unknown) => c);
+    expect(error).toBeInstanceOf(StoragePersistenceError);
+    expect(error).not.toBeInstanceOf(ObservationNotFoundError);
+    spy.mockRestore();
+  });
+});
+
+describe('observation audit — unique (observationId, sequence) enforced by IndexedDB', () => {
+  it('rejects a second audit entry with the same observationId + sequence, even outside the repository', async () => {
+    const { repos, db } = makeTestRepos();
+    const { observation } = await newObservation(repos); // writes sequence 1 via the normal path
+
+    const duplicate = {
+      id: crypto.randomUUID(),
+      schemaVersion: 3,
+      observationId: observation.id,
+      sessionId: observation.sessionId,
+      sequence: 1, // collides with the CREATED entry
+      eventType: 'INTERPRETATION_UPDATED' as const,
+      occurredAt: '2026-08-21T09:01:00.000+02:00',
+      before: null,
+      after: {
+        schemaVersion: 3,
+        assetId: null,
+        observation: observation.observation,
+        evidence: observation.evidence,
+        note: observation.note,
+        locationAdjustment: null,
+        deleted: false,
+        updatedAt: observation.updatedAt,
+        editCount: 0,
+        edited: false,
+      },
+    };
+
+    // Directly bypassing the repository append path must still be rejected by the DB constraint.
+    await expect(db.observationAudit.add(duplicate)).rejects.toThrow();
+    // The store still holds exactly the one legitimate entry.
+    expect(await db.observationAudit.where('observationId').equals(observation.id).count()).toBe(1);
   });
 });
