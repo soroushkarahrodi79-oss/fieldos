@@ -133,7 +133,9 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
 4. **Schema is versioned.** Every entity carries `schemaVersion`; the backup manifest embeds the
    logical schema version so old archives remain interpretable. Dexie migrations are explicit when
    stores or indexes change. Schema 2's additive nullable GNSS fields require no IndexedDB migration:
-   legacy missing properties normalize to explicit `null` at repository/import boundaries.
+   legacy missing properties normalize to explicit `null` at repository/import boundaries without
+   rewriting on read. A later full observation write persists the normalized current shape and
+   upgrades that entity's `schemaVersion` to the current schema.
 5. **Durability is engineered and validated, not assumed.** Request `storage.persist()` on first
    write; surface `persisted()`/`estimate()` state to the UI; make the **full-session backup** the
    trusted backstop. Durability is proven by real-device testing.

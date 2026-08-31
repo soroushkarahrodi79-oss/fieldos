@@ -224,7 +224,7 @@ export class Repositories {
     const updated: Observation = {
       // Immutable identity + capture block, copied verbatim.
       id: existing.id,
-      schemaVersion: existing.schemaVersion,
+      schemaVersion: SCHEMA_VERSION,
       sessionId: existing.sessionId,
       capturedAt: existing.capturedAt,
       capturedLocation: existing.capturedLocation,
@@ -259,6 +259,7 @@ export class Repositories {
 
     const updated: Observation = {
       ...existing,
+      schemaVersion: SCHEMA_VERSION,
       // capturedLocation is intentionally NOT touched.
       locationAdjustment: {
         latitude: adjustment.latitude,

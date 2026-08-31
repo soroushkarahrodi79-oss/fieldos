@@ -16,6 +16,31 @@ const goodFix = (): CapturedLocation => ({
   capturedAt: '2026-08-21T09:00:00.000+02:00',
 });
 
+async function insertLegacyObservation() {
+  const { repos, db } = makeTestRepos();
+  const session = await repos.createSession({ title: 'Legacy' });
+  const current = await repos.createObservation({
+    sessionId: session.id,
+    capturedLocation: goodFix(),
+    observation: { category: 'other', value: null },
+    evidence: { method: 'OBSERVED' },
+  });
+  const legacy = {
+    ...current,
+    schemaVersion: 1,
+    capturedLocation: {
+      latitude: current.capturedLocation.latitude,
+      longitude: current.capturedLocation.longitude,
+      accuracyMeters: current.capturedLocation.accuracyMeters,
+      altitudeMeters: current.capturedLocation.altitudeMeters,
+      locationStatus: current.capturedLocation.locationStatus,
+      capturedAt: current.capturedLocation.capturedAt,
+    },
+  } as unknown as Observation;
+  await db.observations.put(legacy);
+  return { repos, db, session, legacy };
+}
+
 describe('Repositories — data layer quality gate', () => {
   it('creates a FieldSession', async () => {
     const { repos } = makeTestRepos();
@@ -133,36 +158,80 @@ describe('Repositories — data layer quality gate', () => {
     expect(adjusted.edited).toBe(true);
   });
 
-  it('loads a legacy observation with absent GNSS additions as explicit nulls', async () => {
-    const { repos, db } = makeTestRepos();
-    const s = await repos.createSession({ title: 'Legacy' });
-    const current = await repos.createObservation({
-      sessionId: s.id,
-      capturedLocation: goodFix(),
-      observation: { category: 'other', value: null },
-      evidence: { method: 'OBSERVED' },
-    });
-    const legacy = {
-      ...current,
-      schemaVersion: 1,
-      capturedLocation: {
-        latitude: current.capturedLocation.latitude,
-        longitude: current.capturedLocation.longitude,
-        accuracyMeters: current.capturedLocation.accuracyMeters,
-        altitudeMeters: current.capturedLocation.altitudeMeters,
-        locationStatus: current.capturedLocation.locationStatus,
-        capturedAt: current.capturedLocation.capturedAt,
-      },
-    } as unknown as Observation;
-    await db.observations.put(legacy);
-
-    const loaded = await repos.getObservation(current.id);
-    const listed = (await repos.listObservations(s.id))[0];
+  it('normalizes a schema-1 observation on read without rewriting it', async () => {
+    const { repos, db, session, legacy } = await insertLegacyObservation();
+    const loaded = await repos.getObservation(legacy.id);
+    const listed = (await repos.listObservations(session.id))[0];
     for (const observation of [loaded, listed]) {
+      expect(observation?.schemaVersion).toBe(1);
       expect(observation?.capturedLocation.altitudeAccuracyMeters).toBeNull();
       expect(observation?.capturedLocation.headingDegrees).toBeNull();
       expect(observation?.capturedLocation.speedMetersPerSecond).toBeNull();
     }
+
+    const stored = await db.observations.get(legacy.id);
+    expect(stored?.schemaVersion).toBe(1);
+    expect(stored?.capturedLocation).not.toHaveProperty('altitudeAccuracyMeters');
+    expect(stored?.capturedLocation).not.toHaveProperty('headingDegrees');
+    expect(stored?.capturedLocation).not.toHaveProperty('speedMetersPerSecond');
+  });
+
+  it('upgrades a normalized schema-1 observation when interpretation is persisted', async () => {
+    const { repos, db, legacy } = await insertLegacyObservation();
+    const edited = await repos.updateInterpretation(legacy.id, { note: 'edited interpretation' });
+
+    expect(edited.schemaVersion).toBe(2);
+    expect(edited.capturedLocation.altitudeAccuracyMeters).toBeNull();
+    expect(edited.capturedLocation.headingDegrees).toBeNull();
+    expect(edited.capturedLocation.speedMetersPerSecond).toBeNull();
+    expect(edited.capturedAt).toBe(legacy.capturedAt);
+    expect(edited.capturedLocation).toMatchObject({
+      latitude: legacy.capturedLocation.latitude,
+      longitude: legacy.capturedLocation.longitude,
+      accuracyMeters: legacy.capturedLocation.accuracyMeters,
+      altitudeMeters: legacy.capturedLocation.altitudeMeters,
+      locationStatus: legacy.capturedLocation.locationStatus,
+      capturedAt: legacy.capturedLocation.capturedAt,
+    });
+
+    const stored = await db.observations.get(legacy.id);
+    expect(stored?.schemaVersion).toBe(2);
+    expect(stored?.capturedLocation.altitudeAccuracyMeters).toBeNull();
+    expect(stored?.capturedLocation.headingDegrees).toBeNull();
+    expect(stored?.capturedLocation.speedMetersPerSecond).toBeNull();
+  });
+
+  it('upgrades a normalized schema-1 observation when location adjustment is persisted', async () => {
+    const { repos, db, legacy } = await insertLegacyObservation();
+    const adjusted = await repos.adjustLocation(legacy.id, {
+      latitude: 47.9,
+      longitude: 8.9,
+      reason: 'separate adjustment',
+    });
+
+    expect(adjusted.schemaVersion).toBe(2);
+    expect(adjusted.capturedLocation.altitudeAccuracyMeters).toBeNull();
+    expect(adjusted.capturedLocation.headingDegrees).toBeNull();
+    expect(adjusted.capturedLocation.speedMetersPerSecond).toBeNull();
+    expect(adjusted.capturedAt).toBe(legacy.capturedAt);
+    expect(adjusted.capturedLocation).toMatchObject({
+      latitude: legacy.capturedLocation.latitude,
+      longitude: legacy.capturedLocation.longitude,
+      accuracyMeters: legacy.capturedLocation.accuracyMeters,
+      altitudeMeters: legacy.capturedLocation.altitudeMeters,
+      locationStatus: legacy.capturedLocation.locationStatus,
+      capturedAt: legacy.capturedLocation.capturedAt,
+    });
+    expect(adjusted.locationAdjustment).toMatchObject({
+      latitude: 47.9,
+      longitude: 8.9,
+      locationAdjustmentReason: 'separate adjustment',
+    });
+
+    const stored = await db.observations.get(legacy.id);
+    expect(stored?.schemaVersion).toBe(2);
+    expect(stored?.capturedLocation).toEqual(adjusted.capturedLocation);
+    expect(stored?.locationAdjustment).toEqual(adjusted.locationAdjustment);
   });
 
   it('attaches media metadata', async () => {

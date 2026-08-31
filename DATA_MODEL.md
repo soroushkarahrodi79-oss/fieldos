@@ -253,6 +253,9 @@ migration is required because no object store or index changes: IndexedDB stores
 and none of the new properties is indexed. Repository reads and canonical JSON parsing normalize an
 absent legacy property to explicit `null`. Real `0` and browser `null` values are preserved. Legacy
 schema-1 records and backups therefore remain readable, while new canonical output is deterministic.
+Read-only normalization leaves an entity labelled schema 1 and does not rewrite IndexedDB. If that
+normalized observation is later fully persisted through an interpretation edit or location
+adjustment, its entity `schemaVersion` is upgraded to the current schema version.
 
 CSV/GeoJSON are lossy for media (media is not embedded). That is why a separate backup exists.
 
