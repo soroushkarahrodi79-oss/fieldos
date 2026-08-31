@@ -50,11 +50,33 @@ describe('canonical JSON', () => {
 
   it('carries schema + app version and media metadata (no blobs)', async () => {
     const { bundle } = await seededBundle();
-    expect(bundle.fieldosSchemaVersion).toBe(2);
+    expect(bundle.fieldosSchemaVersion).toBe(3);
     expect(bundle.media).toHaveLength(3);
     // Media metadata must not contain a blob.
     expect(bundle.media[0]).not.toHaveProperty('blob');
     expect(bundle.media[0]!.backupFilename).toMatch(/^media\/.+\.jpg$/);
+  });
+
+  it('round-trips the full audit history exactly', async () => {
+    const { bundle } = await seededBundle();
+    // The fixture creates 10 observations (each a CREATED event) and one location adjustment.
+    expect(bundle.auditEntries.length).toBe(11);
+
+    const parsed = parseSessionJson(serializeSessionJson(bundle));
+    expect(parsed.auditEntries).toEqual(bundle.auditEntries);
+    const adjust = parsed.auditEntries.find((e) => e.eventType === 'LOCATION_ADJUSTED');
+    expect(adjust?.before?.locationAdjustment).toBeNull();
+    expect(adjust?.after.locationAdjustment?.latitude).toBeCloseTo(47.37355, 4);
+  });
+
+  it('normalizes a legacy canonical export that predates auditEntries to []', async () => {
+    const { bundle } = await seededBundle();
+    const legacy = JSON.parse(serializeSessionJson(bundle));
+    legacy.fieldosSchemaVersion = 2;
+    delete legacy.auditEntries; // schema-1/2 exports have no audit collection.
+
+    const parsed = parseSessionJson(JSON.stringify(legacy));
+    expect(parsed.auditEntries).toEqual([]); // no invented events.
   });
 });
 

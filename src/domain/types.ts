@@ -173,6 +173,61 @@ export interface Observation {
   deleted: boolean;
 }
 
+// ---------------------------------------------------------------------------
+// Observation audit / revision history (P1-5): append-only LOCAL revision log
+//
+// This records what changed in an observation's MUTABLE state, when, and what the previous
+// state was. It is append-only at the application layer — the repository exposes no update or
+// delete for audit entries. It is NOT a cryptographic chain of custody, NOT tamper-proof, NOT
+// digitally signed, and NOT authenticated authorship (P0 has no accounts). The honest claim is
+// "append-only local observation revision history".
+//
+// SNAPSHOT BOUNDARY: the immutable raw capture block (`capturedAt`, raw `capturedLocation`) is
+// deliberately NOT copied into audit snapshots. Those values are write-once on the canonical
+// Observation and can never change, so duplicating them into every revision would be redundant.
+// The audit log exists to preserve the history of the fields that CAN legitimately change.
+// ---------------------------------------------------------------------------
+
+export type ObservationAuditEventType =
+  | 'CREATED'
+  | 'INTERPRETATION_UPDATED'
+  | 'LOCATION_ADJUSTED'
+  | 'SOFT_DELETED'
+  | 'RESTORED';
+
+/** A snapshot of the MUTABLE observation state at one moment (no raw capture block). */
+export interface ObservationAuditState {
+  schemaVersion: number;
+  assetId: Uuid | null;
+  observation: ObservationValue;
+  evidence: Evidence;
+  note: string | null;
+  locationAdjustment: LocationAdjustment | null;
+  deleted: boolean;
+  updatedAt: IsoTimestamp;
+  editCount: number;
+  edited: boolean;
+}
+
+/**
+ * One append-only revision-history entry for an observation. `sequence` is monotonic per
+ * observation starting at 1. `before` is null only for a genuine CREATED event.
+ */
+export interface ObservationAuditEntry {
+  id: Uuid;
+  schemaVersion: number;
+  observationId: Uuid;
+  sessionId: Uuid;
+  /** 1-based, strictly increasing per observation. No gaps, no duplicates. */
+  sequence: number;
+  eventType: ObservationAuditEventType;
+  occurredAt: IsoTimestamp;
+  /** State immediately before this event; null only for CREATED. */
+  before: ObservationAuditState | null;
+  /** State immediately after this event. */
+  after: ObservationAuditState;
+}
+
 export type MediaKind = 'photo' | 'audio';
 
 export interface MediaAttachment {

@@ -12,6 +12,8 @@ The repository contains the first usable MVP workflow:
 - attach a photo, record an optional offline voice note, and link a nearby known asset;
 - review and edit interpretation while preserving the immutable capture block;
 - adjust a location non-destructively and soft-delete with undo;
+- read a per-observation append-only revision history (what changed, when, and the previous state) —
+  local application history, not cryptographic tamper-proofing;
 - export portable data or create a ZIP backup with media;
 - surface storage durability and quota failures instead of reporting false success.
 

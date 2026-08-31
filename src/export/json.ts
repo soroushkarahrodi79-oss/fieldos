@@ -20,5 +20,8 @@ export function parseSessionJson(text: string): SessionBundle {
       ...observation,
       capturedLocation: normalizeCapturedLocation(observation.capturedLocation),
     })),
+    // Schema-1/2 exports predate the revision log: normalize a missing collection to an empty
+    // array. No historical audit events are ever fabricated for those older records.
+    auditEntries: bundle.auditEntries ?? [],
   };
 }

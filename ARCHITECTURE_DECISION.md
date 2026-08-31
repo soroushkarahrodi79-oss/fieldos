@@ -135,7 +135,23 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
    stores or indexes change. Schema 2's additive nullable GNSS fields require no IndexedDB migration:
    legacy missing properties normalize to explicit `null` at repository/import boundaries without
    rewriting on read. A later full observation write persists the normalized current shape and
-   upgrades that entity's `schemaVersion` to the current schema.
+   upgrades that entity's `schemaVersion` to the current schema. Schema 3 (P1-5) **does** take a real
+   Dexie upgrade (**DB version 1 → 2**) because it adds a new `observationAudit` store; the logical
+   FieldOS schema is a separate counter (**2 → 3**). The upgrade re-declares the four original stores
+   unchanged so existing rows are preserved, and manufactures no historical entries.
+7. **Append-only revision history, transactionally atomic (P1-5).** Beyond `editCount`, each
+   observation has a durable `observationAudit` log answering *what changed, when, and the previous
+   state*. It is append-only **at the application layer** (no public update/delete) — deliberately
+   **not** described as cryptographically tamper-proof, signed, or a legal chain of custody, since P0
+   has no accounts, signatures, or remote anchoring. Every audited mutation writes the observation and
+   its audit entry in **one Dexie read-write transaction**; a genuine storage failure rolls back both
+   (surfaced as `StoragePersistenceError`), while a missing-record mutation throws a distinct
+   `ObservationNotFoundError` (a domain outcome, never masked as a persistence failure) — neither is
+   ever a false success. The per-observation `(observationId, sequence)` invariant is enforced twice:
+   by the repository's max+1 logic **and** by a unique `&[observationId+sequence]` IndexedDB compound
+   index that rejects duplicates at the database layer. The immutable raw capture block is never copied
+   into snapshots and never appears as edited. Event sourcing remains out of scope: this is a targeted
+   revision log over mutable fields, not a full event-sourced rebuild of every entity.
 5. **Durability is engineered and validated, not assumed.** Request `storage.persist()` on first
    write; surface `persisted()`/`estimate()` state to the UI; make the **full-session backup** the
    trusted backstop. Durability is proven by real-device testing.

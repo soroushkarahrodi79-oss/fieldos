@@ -22,6 +22,7 @@ export async function buildSessionBundle(
 
   const assets = await repos.listAssets(sessionId);
   const observations = await repos.listObservations(sessionId, { includeDeleted: true });
+  const auditEntries = await repos.listSessionAuditEntries(sessionId);
 
   const mediaBlobs: MediaAttachment[] = [];
   const media: MediaMetadata[] = [];
@@ -52,6 +53,7 @@ export async function buildSessionBundle(
     assets,
     observations,
     media,
+    auditEntries,
   };
   return { bundle, mediaBlobs };
 }

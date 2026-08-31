@@ -180,7 +180,7 @@ describe('Repositories — data layer quality gate', () => {
     const { repos, db, legacy } = await insertLegacyObservation();
     const edited = await repos.updateInterpretation(legacy.id, { note: 'edited interpretation' });
 
-    expect(edited.schemaVersion).toBe(2);
+    expect(edited.schemaVersion).toBe(3);
     expect(edited.capturedLocation.altitudeAccuracyMeters).toBeNull();
     expect(edited.capturedLocation.headingDegrees).toBeNull();
     expect(edited.capturedLocation.speedMetersPerSecond).toBeNull();
@@ -195,7 +195,7 @@ describe('Repositories — data layer quality gate', () => {
     });
 
     const stored = await db.observations.get(legacy.id);
-    expect(stored?.schemaVersion).toBe(2);
+    expect(stored?.schemaVersion).toBe(3);
     expect(stored?.capturedLocation.altitudeAccuracyMeters).toBeNull();
     expect(stored?.capturedLocation.headingDegrees).toBeNull();
     expect(stored?.capturedLocation.speedMetersPerSecond).toBeNull();
@@ -209,7 +209,7 @@ describe('Repositories — data layer quality gate', () => {
       reason: 'separate adjustment',
     });
 
-    expect(adjusted.schemaVersion).toBe(2);
+    expect(adjusted.schemaVersion).toBe(3);
     expect(adjusted.capturedLocation.altitudeAccuracyMeters).toBeNull();
     expect(adjusted.capturedLocation.headingDegrees).toBeNull();
     expect(adjusted.capturedLocation.speedMetersPerSecond).toBeNull();
@@ -229,7 +229,7 @@ describe('Repositories — data layer quality gate', () => {
     });
 
     const stored = await db.observations.get(legacy.id);
-    expect(stored?.schemaVersion).toBe(2);
+    expect(stored?.schemaVersion).toBe(3);
     expect(stored?.capturedLocation).toEqual(adjusted.capturedLocation);
     expect(stored?.locationAdjustment).toEqual(adjusted.locationAdjustment);
   });

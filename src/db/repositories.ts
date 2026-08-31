@@ -2,6 +2,7 @@ import { FieldOsDb, db as defaultDb } from './db';
 import { newId } from '../domain/ids';
 import { nowIso } from '../domain/time';
 import { normalizeCapturedLocation } from '../domain/geolocation';
+import { buildAuditEntry, snapshotObservationForAudit } from './audit';
 import { SCHEMA_VERSION } from '../version';
 import type {
   Asset,
@@ -14,6 +15,9 @@ import type {
   MediaAttachment,
   MediaKind,
   Observation,
+  ObservationAuditEntry,
+  ObservationAuditEventType,
+  ObservationAuditState,
   ObservationInterpretationPatch,
   ObservationValue,
   Uuid,
@@ -33,11 +37,33 @@ export class StoragePersistenceError extends Error {
   }
 }
 
+/**
+ * A deterministic "this record does not exist" outcome — NOT a storage failure. It is thrown from
+ * inside a transaction (so atomicity is preserved) but must reach callers as itself, never masked
+ * as a `StoragePersistenceError`, whose meaning is reserved for genuine IndexedDB/write failures.
+ */
+export class ObservationNotFoundError extends Error {
+  readonly observationId: Uuid;
+  constructor(id: Uuid) {
+    super(`Observation ${id} not found`);
+    this.name = 'ObservationNotFoundError';
+    this.observationId = id;
+  }
+}
+
+/** Domain-level outcomes that are correct answers, not persistence failures — passed through as-is. */
+function isDomainError(cause: unknown): boolean {
+  return cause instanceof ObservationNotFoundError;
+}
+
 async function persist<T>(operation: string, fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (cause) {
-    // Surface, never swallow. The record is not saved.
+    // Known domain errors (e.g. not-found) are legitimate outcomes, not storage failures — re-throw
+    // them unchanged. Only actual IndexedDB/Dexie/write failures become a StoragePersistenceError,
+    // so that type keeps meaning "the write did not persist". Never swallow either.
+    if (isDomainError(cause)) throw cause;
     throw new StoragePersistenceError(operation, cause);
   }
 }
@@ -186,7 +212,20 @@ export class Repositories {
       edited: false,
       deleted: false,
     };
-    await persist('createObservation', () => this.database.observations.add(observation));
+    // The observation row and its CREATED audit entry (sequence 1) are written in ONE
+    // transaction: if either fails, neither commits — no observation without its origin event,
+    // and no audit entry without its observation.
+    await persist('createObservation', () =>
+      this.database.transaction(
+        'rw',
+        this.database.observations,
+        this.database.observationAudit,
+        async () => {
+          await this.database.observations.add(observation);
+          await this.appendAuditEntry(observation, 'CREATED', null, ts);
+        },
+      ),
+    );
     return observation;
   }
 
@@ -217,32 +256,45 @@ export class Repositories {
     id: Uuid,
     patch: ObservationInterpretationPatch,
   ): Promise<Observation> {
-    const stored = await this.database.observations.get(id);
-    const existing = stored ? normalizeObservation(stored) : undefined;
-    if (!existing) throw new Error(`Observation ${id} not found`);
+    // Read-modify-write and the audit append run inside ONE transaction so the persisted
+    // observation and its INTERPRETATION_UPDATED entry are atomic.
+    return persist('updateInterpretation', () =>
+      this.database.transaction(
+        'rw',
+        this.database.observations,
+        this.database.observationAudit,
+        async () => {
+          const stored = await this.database.observations.get(id);
+          const existing = stored ? normalizeObservation(stored) : undefined;
+          if (!existing) throw new ObservationNotFoundError(id);
 
-    const updated: Observation = {
-      // Immutable identity + capture block, copied verbatim.
-      id: existing.id,
-      schemaVersion: SCHEMA_VERSION,
-      sessionId: existing.sessionId,
-      capturedAt: existing.capturedAt,
-      capturedLocation: existing.capturedLocation,
-      createdAt: existing.createdAt,
-      locationAdjustment: existing.locationAdjustment,
-      deleted: existing.deleted,
-      // Interpretation fields — patched if provided, else preserved.
-      assetId: patch.assetId !== undefined ? patch.assetId : existing.assetId,
-      observation: patch.observation ?? existing.observation,
-      evidence: patch.evidence ?? existing.evidence,
-      note: patch.note !== undefined ? patch.note : existing.note,
-      // Bookkeeping.
-      updatedAt: nowIso(),
-      editCount: existing.editCount + 1,
-      edited: true,
-    };
-    await persist('updateInterpretation', () => this.database.observations.put(updated));
-    return updated;
+          const before = snapshotObservationForAudit(existing);
+          const updated: Observation = {
+            // Immutable identity + capture block, copied verbatim.
+            id: existing.id,
+            schemaVersion: SCHEMA_VERSION,
+            sessionId: existing.sessionId,
+            capturedAt: existing.capturedAt,
+            capturedLocation: existing.capturedLocation,
+            createdAt: existing.createdAt,
+            locationAdjustment: existing.locationAdjustment,
+            deleted: existing.deleted,
+            // Interpretation fields — patched if provided, else preserved.
+            assetId: patch.assetId !== undefined ? patch.assetId : existing.assetId,
+            observation: patch.observation ?? existing.observation,
+            evidence: patch.evidence ?? existing.evidence,
+            note: patch.note !== undefined ? patch.note : existing.note,
+            // Bookkeeping.
+            updatedAt: nowIso(),
+            editCount: existing.editCount + 1,
+            edited: true,
+          };
+          await this.database.observations.put(updated);
+          await this.appendAuditEntry(updated, 'INTERPRETATION_UPDATED', before, updated.updatedAt);
+          return updated;
+        },
+      ),
+    );
   }
 
   /**
@@ -253,41 +305,152 @@ export class Repositories {
     id: Uuid,
     adjustment: { latitude: number; longitude: number; reason?: string | null },
   ): Promise<Observation> {
-    const stored = await this.database.observations.get(id);
-    const existing = stored ? normalizeObservation(stored) : undefined;
-    if (!existing) throw new Error(`Observation ${id} not found`);
+    return persist('adjustLocation', () =>
+      this.database.transaction(
+        'rw',
+        this.database.observations,
+        this.database.observationAudit,
+        async () => {
+          const stored = await this.database.observations.get(id);
+          const existing = stored ? normalizeObservation(stored) : undefined;
+          if (!existing) throw new ObservationNotFoundError(id);
 
-    const updated: Observation = {
-      ...existing,
-      schemaVersion: SCHEMA_VERSION,
-      // capturedLocation is intentionally NOT touched.
-      locationAdjustment: {
-        latitude: adjustment.latitude,
-        longitude: adjustment.longitude,
-        locationAdjustedAt: nowIso(),
-        locationAdjustmentReason: adjustment.reason ?? null,
-      },
-      updatedAt: nowIso(),
-      editCount: existing.editCount + 1,
-      edited: true,
-    };
-    await persist('adjustLocation', () => this.database.observations.put(updated));
-    return updated;
+          // `before` retains the PREVIOUS adjustment (possibly null, or an earlier correction).
+          // Re-adjusting therefore preserves the full A → B history across successive corrections.
+          const before = snapshotObservationForAudit(existing);
+          const ts = nowIso();
+          const updated: Observation = {
+            ...existing,
+            schemaVersion: SCHEMA_VERSION,
+            // capturedLocation is intentionally NOT touched.
+            locationAdjustment: {
+              latitude: adjustment.latitude,
+              longitude: adjustment.longitude,
+              locationAdjustedAt: ts,
+              locationAdjustmentReason: adjustment.reason ?? null,
+            },
+            updatedAt: ts,
+            editCount: existing.editCount + 1,
+            edited: true,
+          };
+          await this.database.observations.put(updated);
+          await this.appendAuditEntry(updated, 'LOCATION_ADJUSTED', before, ts);
+          return updated;
+        },
+      ),
+    );
   }
 
   /** Soft-delete — recoverable, never a hard delete in the field. */
   async softDeleteObservation(id: Uuid): Promise<void> {
-    const updated = await persist('softDeleteObservation', () =>
-      this.database.observations.update(id, { deleted: true, updatedAt: nowIso() }),
-    );
-    if (updated === 0) throw new Error(`Observation ${id} not found`);
+    await this.setDeletedFlag(id, true, 'softDeleteObservation', 'SOFT_DELETED');
   }
 
   async restoreObservation(id: Uuid): Promise<void> {
-    const updated = await persist('restoreObservation', () =>
-      this.database.observations.update(id, { deleted: false, updatedAt: nowIso() }),
+    await this.setDeletedFlag(id, false, 'restoreObservation', 'RESTORED');
+  }
+
+  /**
+   * Shared soft-delete/restore path. Idempotent: if the observation is already in the target
+   * state this is a no-op that writes nothing — no fake duplicate SOFT_DELETED/RESTORED event.
+   * `editCount`/`edited` are deliberately left untouched (delete/restore have never counted as
+   * interpretation edits); only `deleted` and `updatedAt` change, mirrored into the audit log.
+   */
+  private async setDeletedFlag(
+    id: Uuid,
+    deleted: boolean,
+    operation: string,
+    eventType: ObservationAuditEventType,
+  ): Promise<void> {
+    await persist(operation, () =>
+      this.database.transaction(
+        'rw',
+        this.database.observations,
+        this.database.observationAudit,
+        async () => {
+          const stored = await this.database.observations.get(id);
+          const existing = stored ? normalizeObservation(stored) : undefined;
+          if (!existing) throw new ObservationNotFoundError(id);
+          if (existing.deleted === deleted) return; // no-op — nothing to record.
+
+          const before = snapshotObservationForAudit(existing);
+          const ts = nowIso();
+          const updated: Observation = {
+            ...existing,
+            schemaVersion: SCHEMA_VERSION,
+            deleted,
+            updatedAt: ts,
+          };
+          await this.database.observations.put(updated);
+          await this.appendAuditEntry(updated, eventType, before, ts);
+        },
+      ),
     );
-    if (updated === 0) throw new Error(`Observation ${id} not found`);
+  }
+
+  // ---- Audit / revision history ------------------------------------------
+
+  /**
+   * Append one audit entry for an observation. MUST be called inside an active read-write
+   * transaction that already includes both `observations` and `observationAudit`, so the entry
+   * commits atomically with the observation write that produced it. Private on purpose: audit
+   * entries are only ever created by legitimate observation mutations, never by callers/UI.
+   */
+  private async appendAuditEntry(
+    observation: Observation,
+    eventType: ObservationAuditEventType,
+    before: ObservationAuditState | null,
+    occurredAt: IsoTimestamp,
+  ): Promise<void> {
+    const sequence = await this.nextAuditSequence(observation.id);
+    const entry = buildAuditEntry({
+      observationId: observation.id,
+      sessionId: observation.sessionId,
+      sequence,
+      eventType,
+      occurredAt,
+      before,
+      after: snapshotObservationForAudit(observation),
+    });
+    await this.database.observationAudit.add(entry);
+  }
+
+  /**
+   * The next monotonic per-observation sequence (1, 2, 3, …). Because the log is append-only with
+   * no deletions, taking max(existing) + 1 is gap-free; reading only this observation's few entries
+   * keeps it cheap. Runs inside the caller's transaction, so it sees uncommitted prior appends.
+   */
+  private async nextAuditSequence(observationId: Uuid): Promise<number> {
+    const existing = await this.database.observationAudit
+      .where('observationId')
+      .equals(observationId)
+      .toArray();
+    return existing.reduce((max, entry) => Math.max(max, entry.sequence), 0) + 1;
+  }
+
+  /** Read-only revision history for one observation, ordered by sequence (1 → N). */
+  async listObservationAuditEntries(observationId: Uuid): Promise<ObservationAuditEntry[]> {
+    const rows = await this.database.observationAudit
+      .where('observationId')
+      .equals(observationId)
+      .toArray();
+    return rows.sort((a, b) => a.sequence - b.sequence);
+  }
+
+  /**
+   * Read-only revision history for an entire session — needed for export. Ordered deterministically
+   * (chronological, then by observation, then by sequence) so serialization is stable.
+   */
+  async listSessionAuditEntries(sessionId: Uuid): Promise<ObservationAuditEntry[]> {
+    const rows = await this.database.observationAudit
+      .where('sessionId')
+      .equals(sessionId)
+      .toArray();
+    return rows.sort((a, b) => {
+      if (a.occurredAt !== b.occurredAt) return a.occurredAt < b.occurredAt ? -1 : 1;
+      if (a.observationId !== b.observationId) return a.observationId < b.observationId ? -1 : 1;
+      return a.sequence - b.sequence;
+    });
   }
 
   // ---- Media -------------------------------------------------------------
