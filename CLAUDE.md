@@ -90,7 +90,8 @@ npm run typecheck    # tsc --noEmit (strict)
 planned surfaces: sessions home, session/observation list, new observation capture, observation
 detail/edit, and export/backup. The data layer, provenance rules, GPS failure handling, nearby
 assets, photo storage, serializers, ZIP backup, storage-health banner, and automated tests are in
-place. There are intentionally still **no maps, backend, auth, or cloud sync**.
+place. A P1 spatial map (MapLibre GL, online basemap only) is now included as a read-only derived view;
+there is intentionally still **no backend, auth, cloud sync, or offline/PMTiles basemap**.
 
 Before any real field campaign, complete P0-21 on physical iPhone and Android hardware: installed
 offline launch, GPS/photo capture, background and restart survival, storage pressure, OS share,

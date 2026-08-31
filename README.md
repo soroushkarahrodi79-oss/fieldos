@@ -14,6 +14,9 @@ The repository contains the first usable MVP workflow:
 - adjust a location non-destructively and soft-delete with undo;
 - read a per-observation append-only revision history (what changed, when, and the previous state) —
   local application history, not cryptographic tamper-proofing;
+- open a **spatial map** of a session (MapLibre GL) to see observations, assets, and the current
+  position as points, tap a point to inspect it, and jump to the full observation detail — with an
+  **online-only** basemap that degrades gracefully (records stay usable if tiles cannot load);
 - export portable data or create a ZIP backup with media;
 - surface storage durability and quota failures instead of reporting false success.
 
@@ -54,7 +57,7 @@ The browser app uses IndexedDB. Clearing site data removes local FieldOS records
 
 ## Architecture
 
-FieldOS deliberately has no backend in the MVP. React and TypeScript provide the UI and domain model, Dexie wraps IndexedDB, the Web Geolocation API captures location provenance, Workbox precaches the application shell, and `fflate` creates offline ZIP backups. See [ARCHITECTURE_DECISION.md](ARCHITECTURE_DECISION.md) and [DATA_MODEL.md](DATA_MODEL.md).
+FieldOS deliberately has no backend in the MVP. React and TypeScript provide the UI and domain model, Dexie wraps IndexedDB, the Web Geolocation API captures location provenance, Workbox precaches the application shell, and `fflate` creates offline ZIP backups. The optional spatial map uses **MapLibre GL JS** (open-source, no API key) rendering derived map features over an **online-only** OpenStreetMap raster basemap — suitable for MVP/testing, not high-volume production, and **not** an offline-maps feature (PMTiles/offline tiles are deferred). The map is a read-only derived view; it consumes the existing canonical data, adds no persisted coordinates, and requires no schema or database migration. See [ARCHITECTURE_DECISION.md](ARCHITECTURE_DECISION.md) and [DATA_MODEL.md](DATA_MODEL.md).
 
 ## Privacy
 

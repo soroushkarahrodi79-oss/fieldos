@@ -26,7 +26,18 @@ Every P0 below is traced to the core workflow. If it isn't necessary for that wo
   Dexie transaction (DB version 1 → 2; logical schema 2 → 3). Raw capture immutability is preserved,
   no history is fabricated for legacy records, and canonical JSON / ZIP backup carry the full trail.
   It is append-only local history — **not** cryptographic tamper-proofing. See DATA_MODEL.md.
-- Next engineering state: maps, OPFS, or AI work remain deferred and bounded by the product contract.
+- Delivered on 2026-08-31: **P1-6 Spatial Map MVP (P1-1 interactive map)**. A per-session MapLibre GL
+  map view shows observations, assets, and a single current-position fix as tappable points, with a
+  concise popup card and navigation to the existing observation detail. Observation placement uses the
+  existing derived `effectiveLocation` policy (adjusted pin when a `locationAdjustment` exists, raw fix
+  otherwise); the card states honestly when a mapped position is manually adjusted and that the raw GPS
+  is retained. Basemap is **online-only** OpenStreetMap raster (keyless, attributed, MVP/testing only);
+  offline or tile failure shows a "Basemap unavailable" banner while overlays remain renderable. **No
+  schema or Dexie migration**, no map-only persisted coordinates. PMTiles / offline basemap / tracking
+  remain deferred. Spatial transformation logic is isolated in `src/spatial/` with focused unit tests;
+  MapLibre rendering is not unit-tested (validated by production preview + browser QA).
+- Next engineering state: OPFS or AI work remain deferred and bounded by the product contract; offline
+  basemap (PMTiles) is the natural next spatial phase, gated on field validation of the online map.
 - Post-MVP P1/P2 scope remains deferred unless the product contract is deliberately changed.
 
 ---
@@ -85,7 +96,13 @@ Every P0 below is traced to the core workflow. If it isn't necessary for that wo
 ## P1 — useful after first field test
 
 - **P1-1** Interactive map view (MapLibre/Leaflet) to see observations as points; **online tiles first**,
-  cached/offline tiles only if justified.
+  cached/offline tiles only if justified. **Delivered 2026-08-31 as the P1-6 Spatial Map MVP.** MapLibre
+  GL JS (open-source, no key) renders observations, assets, and a single current-position fix as tappable
+  points over an **online-only** OSM raster basemap (attributed; MVP/testing, not production). Observation
+  placement follows the derived `effectiveLocation` policy with explicit captured-vs-adjusted provenance
+  in the popup; raw `capturedLocation` is never mutated. Graceful offline/tile-failure fallback; no schema
+  or DB migration; pure spatial logic in `src/spatial/` is unit-tested. Cached/offline tiles (PMTiles) are
+  **not** implemented and remain deferred (see out-of-scope note below).
 - **P1-2** Voice notes (MediaRecorder) — audio attachments; handle iOS quirks.
   **Implemented in code; physical iPhone core flow PASS — owner-attested, 2026-08-31.** Native `getUserMedia` +
   `MediaRecorder` capture with runtime MIME negotiation (`audio/mp4` first for Safari/iOS),
