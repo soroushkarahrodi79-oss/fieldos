@@ -27,11 +27,30 @@ describe('canonical JSON', () => {
       expect(parsed.observations[i]!.capturedAt).toBe(bundle.observations[i]!.capturedAt);
       expect(parsed.observations[i]!.createdAt).toBe(bundle.observations[i]!.createdAt);
     }
+    expect(parsed.observations[0]!.capturedLocation.altitudeAccuracyMeters).toBe(4.5);
+    expect(parsed.observations[0]!.capturedLocation.headingDegrees).toBe(127);
+    expect(parsed.observations[0]!.capturedLocation.speedMetersPerSecond).toBe(1.8);
+  });
+
+  it('normalizes a legacy canonical export with absent GNSS additions', async () => {
+    const { bundle } = await seededBundle();
+    const legacy = JSON.parse(serializeSessionJson(bundle));
+    legacy.fieldosSchemaVersion = 1;
+    legacy.observations[0].schemaVersion = 1;
+    delete legacy.observations[0].capturedLocation.altitudeAccuracyMeters;
+    delete legacy.observations[0].capturedLocation.headingDegrees;
+    delete legacy.observations[0].capturedLocation.speedMetersPerSecond;
+
+    const parsed = parseSessionJson(JSON.stringify(legacy));
+    expect(parsed.observations[0]!.capturedLocation.altitudeAccuracyMeters).toBeNull();
+    expect(parsed.observations[0]!.capturedLocation.headingDegrees).toBeNull();
+    expect(parsed.observations[0]!.capturedLocation.speedMetersPerSecond).toBeNull();
+    expect(serializeSessionJson(parsed)).toContain('"altitudeAccuracyMeters": null');
   });
 
   it('carries schema + app version and media metadata (no blobs)', async () => {
     const { bundle } = await seededBundle();
-    expect(bundle.fieldosSchemaVersion).toBe(1);
+    expect(bundle.fieldosSchemaVersion).toBe(2);
     expect(bundle.media).toHaveLength(3);
     // Media metadata must not contain a blob.
     expect(bundle.media[0]).not.toHaveProperty('blob');
@@ -61,6 +80,7 @@ describe('CSV', () => {
       sessionId: s.id,
       capturedLocation: {
         latitude: 1, longitude: 2, accuracyMeters: 5, altitudeMeters: null,
+        altitudeAccuracyMeters: null, headingDegrees: null, speedMetersPerSecond: null,
         locationStatus: 'CAPTURED', capturedAt: '2026-08-21T09:00:00.000+02:00',
       },
       observation: { category: 'other', value: null },
@@ -70,6 +90,28 @@ describe('CSV', () => {
     const { bundle } = await buildSessionBundle(repos, s.id);
     const csv = serializeObservationsCsv(bundle);
     expect(csv).toContain('"a note, with ""quotes"" and, commas"');
+  });
+
+  it('emits deterministic raw GNSS columns and empty cells for unavailable values', async () => {
+    const { bundle } = await seededBundle();
+    const lines = serializeObservationsCsv(bundle).split('\r\n');
+    const columns = lines[0]!.split(',');
+    const altitudeAccuracy = columns.indexOf('location_altitude_accuracy_m');
+    const heading = columns.indexOf('location_heading_deg');
+    const speed = columns.indexOf('location_speed_mps');
+    expect(altitudeAccuracy).toBeGreaterThan(-1);
+    expect(heading).toBeGreaterThan(-1);
+    expect(speed).toBeGreaterThan(-1);
+
+    const located = lines[1]!.split(',');
+    expect(located[altitudeAccuracy]).toBe('4.5');
+    expect(located[heading]).toBe('127');
+    expect(located[speed]).toBe('1.8');
+
+    const unlocated = lines.find((line) => line.includes(',TIMEOUT,'))!.split(',');
+    expect(unlocated[altitudeAccuracy]).toBe('');
+    expect(unlocated[heading]).toBe('');
+    expect(unlocated[speed]).toBe('');
   });
 });
 
@@ -98,5 +140,8 @@ describe('GeoJSON', () => {
     );
     expect(adjusted).toBeDefined();
     expect(adjusted.geometry.coordinates[1]).toBeCloseTo(47.37355, 4);
+    expect(adjusted.properties.altitudeAccuracyMeters).toBe(4.5);
+    expect(adjusted.properties.headingDegrees).toBe(127);
+    expect(adjusted.properties.speedMetersPerSecond).toBe(1.8);
   });
 });

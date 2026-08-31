@@ -53,7 +53,9 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
   minimize deps, `idb` (Jake Archibald, tiny) is the fallback. Either is fine; **not** a heavier ORM.
 
 ### Web Geolocation API — **ADOPT (required)**
-- *Problem it solves:* lat/lon + **accuracy** + timestamp, the core located-evidence capture.
+- *Problem it solves:* lat/lon + accuracy + altitude/altitude accuracy + heading + speed + timestamp,
+  the core located-evidence capture. Every value is mapped directly from the browser fix; FieldOS
+  does not derive missing motion or uncertainty metadata.
   `getCurrentPosition` with `enableHighAccuracy` and a timeout.
 - *Platform alternative:* none. Adopt. Note: requires HTTPS + user gesture; no background geo in PWA.
 
@@ -123,11 +125,17 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
 2. **Immutable capture block.** The code path that writes `capturedLocation`/`capturedAt` is
    write-once; edits touch only the interpretation block and bump `editCount`. A manual correction
    writes a separate `locationAdjustment`; `effectiveLocation` is derived, never persisted over the raw fix.
+   Raw altitude accuracy, heading, and speed are included in this immutable block and are never
+   overwritten by a manual location adjustment.
 3. **Raw before derived, user before machine.** No machine-generated field may occupy an
    `evidence.method` of OBSERVED/MEASURED/REPORTED; those are for the human observer only. No
    `DERIVED`/`MISSING` methods, no fabricated coordinates, no fake confidence, no generic score.
-4. **Schema is versioned.** Every entity carries `schemaVersion`; Dexie migrations are explicit;
-   the backup manifest embeds the version so old archives remain interpretable.
+4. **Schema is versioned.** Every entity carries `schemaVersion`; the backup manifest embeds the
+   logical schema version so old archives remain interpretable. Dexie migrations are explicit when
+   stores or indexes change. Schema 2's additive nullable GNSS fields require no IndexedDB migration:
+   legacy missing properties normalize to explicit `null` at repository/import boundaries without
+   rewriting on read. A later full observation write persists the normalized current shape and
+   upgrades that entity's `schemaVersion` to the current schema.
 5. **Durability is engineered and validated, not assumed.** Request `storage.persist()` on first
    write; surface `persisted()`/`estimate()` state to the UI; make the **full-session backup** the
    trusted backstop. Durability is proven by real-device testing.

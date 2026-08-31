@@ -2,16 +2,44 @@ import { describe, expect, it, vi } from 'vitest';
 import { FieldOsDb } from './db';
 import { Repositories, StoragePersistenceError } from './repositories';
 import { makeTestRepos } from '../test/helpers';
-import type { CapturedLocation } from '../domain/types';
+import type { CapturedLocation, Observation } from '../domain/types';
 
 const goodFix = (): CapturedLocation => ({
   latitude: 47.37,
   longitude: 8.54,
   accuracyMeters: 5,
-  altitudeMeters: null,
+  altitudeMeters: 667,
+  altitudeAccuracyMeters: 4.5,
+  headingDegrees: 127,
+  speedMetersPerSecond: 1.8,
   locationStatus: 'CAPTURED',
   capturedAt: '2026-08-21T09:00:00.000+02:00',
 });
+
+async function insertLegacyObservation() {
+  const { repos, db } = makeTestRepos();
+  const session = await repos.createSession({ title: 'Legacy' });
+  const current = await repos.createObservation({
+    sessionId: session.id,
+    capturedLocation: goodFix(),
+    observation: { category: 'other', value: null },
+    evidence: { method: 'OBSERVED' },
+  });
+  const legacy = {
+    ...current,
+    schemaVersion: 1,
+    capturedLocation: {
+      latitude: current.capturedLocation.latitude,
+      longitude: current.capturedLocation.longitude,
+      accuracyMeters: current.capturedLocation.accuracyMeters,
+      altitudeMeters: current.capturedLocation.altitudeMeters,
+      locationStatus: current.capturedLocation.locationStatus,
+      capturedAt: current.capturedLocation.capturedAt,
+    },
+  } as unknown as Observation;
+  await db.observations.put(legacy);
+  return { repos, db, session, legacy };
+}
 
 describe('Repositories — data layer quality gate', () => {
   it('creates a FieldSession', async () => {
@@ -55,6 +83,9 @@ describe('Repositories — data layer quality gate', () => {
         longitude: null,
         accuracyMeters: null,
         altitudeMeters: null,
+        altitudeAccuracyMeters: null,
+        headingDegrees: null,
+        speedMetersPerSecond: null,
         locationStatus: 'TIMEOUT',
         capturedAt: '2026-08-21T09:05:00.000+02:00',
       },
@@ -89,6 +120,15 @@ describe('Repositories — data layer quality gate', () => {
     // …but the immutable capture block and createdAt are untouched.
     expect(edited.capturedAt).toBe(o.capturedAt);
     expect(edited.capturedLocation).toEqual(o.capturedLocation);
+    expect(edited.capturedLocation).toMatchObject({
+      latitude: 47.37,
+      longitude: 8.54,
+      accuracyMeters: 5,
+      altitudeMeters: 667,
+      altitudeAccuracyMeters: 4.5,
+      headingDegrees: 127,
+      speedMetersPerSecond: 1.8,
+    });
     expect(edited.createdAt).toBe(o.createdAt);
   });
 
@@ -112,7 +152,86 @@ describe('Repositories — data layer quality gate', () => {
     expect(adjusted.locationAdjustment?.locationAdjustmentReason).toBe('moved pin');
     // Original fix must still be exactly the captured one.
     expect(adjusted.capturedLocation).toEqual(o.capturedLocation);
+    expect(adjusted.capturedLocation.altitudeAccuracyMeters).toBe(4.5);
+    expect(adjusted.capturedLocation.headingDegrees).toBe(127);
+    expect(adjusted.capturedLocation.speedMetersPerSecond).toBe(1.8);
     expect(adjusted.edited).toBe(true);
+  });
+
+  it('normalizes a schema-1 observation on read without rewriting it', async () => {
+    const { repos, db, session, legacy } = await insertLegacyObservation();
+    const loaded = await repos.getObservation(legacy.id);
+    const listed = (await repos.listObservations(session.id))[0];
+    for (const observation of [loaded, listed]) {
+      expect(observation?.schemaVersion).toBe(1);
+      expect(observation?.capturedLocation.altitudeAccuracyMeters).toBeNull();
+      expect(observation?.capturedLocation.headingDegrees).toBeNull();
+      expect(observation?.capturedLocation.speedMetersPerSecond).toBeNull();
+    }
+
+    const stored = await db.observations.get(legacy.id);
+    expect(stored?.schemaVersion).toBe(1);
+    expect(stored?.capturedLocation).not.toHaveProperty('altitudeAccuracyMeters');
+    expect(stored?.capturedLocation).not.toHaveProperty('headingDegrees');
+    expect(stored?.capturedLocation).not.toHaveProperty('speedMetersPerSecond');
+  });
+
+  it('upgrades a normalized schema-1 observation when interpretation is persisted', async () => {
+    const { repos, db, legacy } = await insertLegacyObservation();
+    const edited = await repos.updateInterpretation(legacy.id, { note: 'edited interpretation' });
+
+    expect(edited.schemaVersion).toBe(2);
+    expect(edited.capturedLocation.altitudeAccuracyMeters).toBeNull();
+    expect(edited.capturedLocation.headingDegrees).toBeNull();
+    expect(edited.capturedLocation.speedMetersPerSecond).toBeNull();
+    expect(edited.capturedAt).toBe(legacy.capturedAt);
+    expect(edited.capturedLocation).toMatchObject({
+      latitude: legacy.capturedLocation.latitude,
+      longitude: legacy.capturedLocation.longitude,
+      accuracyMeters: legacy.capturedLocation.accuracyMeters,
+      altitudeMeters: legacy.capturedLocation.altitudeMeters,
+      locationStatus: legacy.capturedLocation.locationStatus,
+      capturedAt: legacy.capturedLocation.capturedAt,
+    });
+
+    const stored = await db.observations.get(legacy.id);
+    expect(stored?.schemaVersion).toBe(2);
+    expect(stored?.capturedLocation.altitudeAccuracyMeters).toBeNull();
+    expect(stored?.capturedLocation.headingDegrees).toBeNull();
+    expect(stored?.capturedLocation.speedMetersPerSecond).toBeNull();
+  });
+
+  it('upgrades a normalized schema-1 observation when location adjustment is persisted', async () => {
+    const { repos, db, legacy } = await insertLegacyObservation();
+    const adjusted = await repos.adjustLocation(legacy.id, {
+      latitude: 47.9,
+      longitude: 8.9,
+      reason: 'separate adjustment',
+    });
+
+    expect(adjusted.schemaVersion).toBe(2);
+    expect(adjusted.capturedLocation.altitudeAccuracyMeters).toBeNull();
+    expect(adjusted.capturedLocation.headingDegrees).toBeNull();
+    expect(adjusted.capturedLocation.speedMetersPerSecond).toBeNull();
+    expect(adjusted.capturedAt).toBe(legacy.capturedAt);
+    expect(adjusted.capturedLocation).toMatchObject({
+      latitude: legacy.capturedLocation.latitude,
+      longitude: legacy.capturedLocation.longitude,
+      accuracyMeters: legacy.capturedLocation.accuracyMeters,
+      altitudeMeters: legacy.capturedLocation.altitudeMeters,
+      locationStatus: legacy.capturedLocation.locationStatus,
+      capturedAt: legacy.capturedLocation.capturedAt,
+    });
+    expect(adjusted.locationAdjustment).toMatchObject({
+      latitude: 47.9,
+      longitude: 8.9,
+      locationAdjustmentReason: 'separate adjustment',
+    });
+
+    const stored = await db.observations.get(legacy.id);
+    expect(stored?.schemaVersion).toBe(2);
+    expect(stored?.capturedLocation).toEqual(adjusted.capturedLocation);
+    expect(stored?.locationAdjustment).toEqual(adjusted.locationAdjustment);
   });
 
   it('attaches media metadata', async () => {

@@ -7,6 +7,7 @@ import type { CapturedLocation, MediaAttachment } from '../domain/types';
 
 const fix = (): CapturedLocation => ({
   latitude: 47.37, longitude: 8.54, accuracyMeters: 5, altitudeMeters: null,
+  altitudeAccuracyMeters: null, headingDegrees: null, speedMetersPerSecond: null,
   locationStatus: 'CAPTURED', capturedAt: '2026-08-21T09:00:00.000+02:00',
 });
 

@@ -33,7 +33,7 @@ describe('full-session ZIP backup', () => {
     expect(manifest.sessionId).toBe(fixture.sessionId);
     expect(manifest.observationCount).toBe(10);
     expect(manifest.mediaCount).toBe(3);
-    expect(manifest.fieldosSchemaVersion).toBe(1);
+    expect(manifest.fieldosSchemaVersion).toBe(2);
     expect(manifest.appVersion).toBe('0.1.0');
     expect(typeof manifest.exportedAt).toBe('string');
     // The in-memory manifest matches the archived one.
@@ -47,6 +47,7 @@ describe('full-session ZIP backup', () => {
       sessionId: s.id,
       capturedLocation: {
         latitude: 1, longitude: 2, accuracyMeters: 5, altitudeMeters: null,
+        altitudeAccuracyMeters: null, headingDegrees: null, speedMetersPerSecond: null,
         locationStatus: 'CAPTURED', capturedAt: '2026-08-21T09:00:00.000+02:00',
       },
       observation: { category: 'other', value: null },
@@ -65,5 +66,16 @@ describe('full-session ZIP backup', () => {
     const pngName = Object.keys(files).find((n) => n.startsWith('media/') && n.endsWith('.png'));
     expect(pngName).toBeDefined();
     expect(Array.from(files[pngName!]!)).toEqual(Array.from(original));
+  });
+
+  it('preserves raw GNSS metadata in canonical JSON inside the ZIP', async () => {
+    const { repos } = makeTestRepos();
+    const fixture = await seedFixture(repos);
+    const backup = await buildSessionBackup(repos, fixture.sessionId);
+    const files = unzipSync(backup.zipBytes);
+    const canonical = JSON.parse(strFromU8(files['observations.json']!));
+    expect(canonical.observations[0].capturedLocation.altitudeAccuracyMeters).toBe(4.5);
+    expect(canonical.observations[0].capturedLocation.headingDegrees).toBe(127);
+    expect(canonical.observations[0].capturedLocation.speedMetersPerSecond).toBe(1.8);
   });
 });

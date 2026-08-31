@@ -8,7 +8,7 @@ Priority definitions:
 
 Every P0 below is traced to the core workflow. If it isn't necessary for that workflow, it isn't P0.
 
-## Implementation snapshot — 2026-08-21
+## Implementation snapshot — 2026-08-31
 
 - Implemented in code: P0-1 through P0-20, including the five-screen local workflow, honest GPS
   failure states, nearby asset selection, one-photo capture, non-destructive editing/location
@@ -16,8 +16,12 @@ Every P0 below is traced to the core workflow. If it isn't necessary for that wo
 - Completed by owner attestation on 2026-08-21: **P0-21 physical iPhone and Android smoke testing**,
   using [docs/DEVICE_SMOKE_TEST.md](docs/DEVICE_SMOKE_TEST.md). The recorded gate result is in
   [docs/DEVICE_TEST_RESULT.md](docs/DEVICE_TEST_RESULT.md).
-- Next validation: the 1–2 hour campaign in
-  [docs/FIRST_FIELD_RUN.md](docs/FIRST_FIELD_RUN.md). Findings from that run determine P1 priority.
+- Completed by owner attestation on 2026-08-31: **FIRST FIELD RUN: PASS**. The 60–120 minute real
+  field workflow passed its executed acceptance checks, including offline capture, tested
+  close/reopen persistence, export, and backup, with no intended data loss. Exact counts and timing
+  metrics were not recorded. See [docs/FIRST_FIELD_RUN.md](docs/FIRST_FIELD_RUN.md).
+- Next engineering state: evaluate **P1-5 append-only observation audit/revision history** before
+  maps, OPFS, or AI work. Keep the evaluation bounded and preserve the current immutable raw capture.
 - Post-MVP P1/P2 scope remains deferred unless the product contract is deliberately changed.
 
 ---
@@ -78,13 +82,15 @@ Every P0 below is traced to the core workflow. If it isn't necessary for that wo
 - **P1-1** Interactive map view (MapLibre/Leaflet) to see observations as points; **online tiles first**,
   cached/offline tiles only if justified.
 - **P1-2** Voice notes (MediaRecorder) — audio attachments; handle iOS quirks.
-  **Implemented in code; physical mobile validation pending.** Native `getUserMedia` +
+  **Implemented in code; physical iPhone core flow PASS — owner-attested, 2026-08-31.** Native `getUserMedia` +
   `MediaRecorder` capture with runtime MIME negotiation (`audio/mp4` first for Safari/iOS),
   optional per-observation voice note, in-place preview/replay/remove/re-record, a 3-minute
   defensive cap, local IndexedDB persistence via the existing generic `MediaAttachment`, audio
   playback on the observation detail screen, honest media badges (no longer mislabelled "Photo"),
   and audio coverage in the full-session ZIP backup. No transcription, no backend, no AI, no
-  network dependency. See `docs/VOICE_NOTES_SMOKE_TEST.md` for the device validation plan.
+  network dependency. Permission denial, storage pressure, exact 3-minute auto-stop,
+  unsupported-browser handling, other checklist edge cases, and Android physical validation remain
+  pending. See `docs/VOICE_NOTES_SMOKE_TEST.md` for the evidence boundary and remaining plan.
 - **P1-3** Import preloaded reference assets from GeoJSON (with `source: preloaded`).
 - **P1-4** Asset polygon geometry (beyond points).
 - **P1-5** Full revision/audit log per observation (append-only), beyond editCount.

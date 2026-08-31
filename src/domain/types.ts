@@ -28,6 +28,12 @@ export interface CapturedLocation {
   /** Metres, from Geolocation `coords.accuracy`. Honest uncertainty — never dropped. */
   accuracyMeters: number | null;
   altitudeMeters: number | null;
+  /** Metres, mapped directly from Geolocation `coords.altitudeAccuracy`. */
+  altitudeAccuracyMeters: number | null;
+  /** Degrees, mapped directly from Geolocation `coords.heading`; never estimated. */
+  headingDegrees: number | null;
+  /** Metres per second, mapped directly from Geolocation `coords.speed`; never inferred. */
+  speedMetersPerSecond: number | null;
   locationStatus: LocationStatus;
   capturedAt: IsoTimestamp;
 }

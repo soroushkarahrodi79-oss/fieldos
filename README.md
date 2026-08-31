@@ -21,10 +21,15 @@ The P0 physical-device gate (iPhone and Android) is recorded as **passed** on 20
 the repository owner's attestation against the checklist in
 [docs/DEVICE_SMOKE_TEST.md](docs/DEVICE_SMOKE_TEST.md) — see
 [docs/DEVICE_TEST_RESULT.md](docs/DEVICE_TEST_RESULT.md) for the recorded result and reopening
-conditions. This is a manual, owner-attested pass, not an automated or third-party-audited one. See
-[MVP_BACKLOG.md](MVP_BACKLOG.md) and [PRODUCT_CONTRACT.md](PRODUCT_CONTRACT.md) for the full release
-gates and scope, and [docs/FIRST_FIELD_RUN.md](docs/FIRST_FIELD_RUN.md) for the next operational step
-(the first 1–2 hour real field run, which has not yet taken place).
+conditions. **FIRST FIELD RUN: PASS — owner-attested, 2026-08-31.** The real 60–120 minute workflow
+completed offline with no intended data loss; tested close/reopen persistence, exports, and backup
+checks passed, and the owner reports they would rely on FieldOS in field use. Exact counts and
+timings were not recorded. See [docs/FIRST_FIELD_RUN.md](docs/FIRST_FIELD_RUN.md) for the evidence
+record and [MVP_BACKLOG.md](MVP_BACKLOG.md) for the next engineering state.
+
+The core physical iPhone voice-recording path is also **PASS — owner-attested, 2026-08-31**. This
+does not close the separate voice edge-case or Android checks; those remain pending in
+[docs/VOICE_NOTES_SMOKE_TEST.md](docs/VOICE_NOTES_SMOKE_TEST.md).
 
 ## Run locally
 

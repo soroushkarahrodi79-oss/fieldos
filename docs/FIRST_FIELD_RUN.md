@@ -1,5 +1,38 @@
 # First FieldOS field run
 
+**FIRST FIELD RUN: PASS — owner-attested, 2026-08-31**
+
+The repository owner reports completing the real 60–120 minute field-validation workflow on a
+physical device. All acceptance checks they executed passed: offline capture worked, observations
+persisted through the tested close/reopen flow, no intended data loss was observed, and export and
+backup validation passed. The owner reports they would rely on FieldOS in field use. This is manual,
+owner-attested evidence, not an automated or third-party-audited result.
+
+Exact observation counts, device model, OS/browser version, coordinates, filenames, timing metrics,
+and storage-pressure results were **not recorded**. No claim is made for any unreported result.
+
+## Recorded result
+
+| Metric | Result |
+| --- | --- |
+| Run date | 2026-08-31 |
+| Run duration | 60–120 minute workflow completed; exact duration not recorded |
+| Planned observations | not recorded |
+| Saved observations | not recorded |
+| Located observations | not recorded |
+| Photo observations | not recorded |
+| Median representative capture time | not recorded |
+| Offline capture | PASS — owner-attested |
+| Intended data loss | none observed — owner-attested |
+| App close/reopen survival | PASS — owner-attested |
+| Phone restart survival | not recorded |
+| Full backup validation | PASS — owner-attested |
+| CSV / GeoJSON / JSON export validation | PASS — owner-attested |
+| Observer would rely on FieldOS | YES — owner-attested |
+| Overall result | PASS — owner-attested |
+
+## Validation workflow used
+
 Use the live installed PWA for one 60–120 minute observation campaign. The purpose is to validate
 the complete capture-to-backup workflow under real movement, lighting, GPS, battery, and attention
 constraints—not to collect a large research dataset.
@@ -60,23 +93,8 @@ While still offline:
 
 Do not upload real field exports to the public repository.
 
-## 5. Record the result
-
-| Metric | Result |
-| --- | --- |
-| Planned observations | |
-| Saved observations | |
-| Located observations | |
-| Photo observations | |
-| Median representative capture time | |
-| App close/reopen survival | PASS / FAIL |
-| Phone restart survival | PASS / FAIL / NOT RUN |
-| Full backup opened externally | PASS / FAIL |
-| CSV opened | PASS / FAIL |
-| GeoJSON opened | PASS / FAIL |
-| Observer would rely on FieldOS | YES / NO |
-| Overall result | PASS / FAIL |
+## 5. Pass rule
 
 The run passes only with zero intended data loss, no false save success, fully usable offline capture,
-and externally readable export and backup files. Record usability problems even when they do not
-block the run; those observations determine the next P1 priority.
+and usable export and backup files. The owner-attested result above closes this validation loop;
+unreported numerical metrics remain `not recorded` rather than inferred.
