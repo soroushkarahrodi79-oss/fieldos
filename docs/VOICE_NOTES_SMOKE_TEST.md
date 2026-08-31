@@ -9,6 +9,19 @@ iPhone (Safari) and one physical Android (Chrome) before relying on voice captur
 Desktop emulation does not count. Do not attach real recordings, coordinates, or observer names to
 a public GitHub issue — use synthetic observations and say a few test words only.
 
+## Recorded validation status
+
+**Physical iPhone core voice flow: PASS — owner-attested, 2026-08-31**
+
+The repository owner physically exercised the core voice recorder on an iPhone and reports that
+recording works very well. Device model, OS/browser version, installed mode, MIME type, recording
+duration, filename, and exact checklist steps were **not recorded**.
+
+This evidence validates only the core iPhone recording path. It does **not** establish PASS results
+for permission-denied handling, cancel/navigation cleanup, storage-pressure failure, exact 3-minute
+auto-stop, unsupported browsers, Android recording, or any other unreported checklist item. Those
+checks remain pending.
+
 ## Test record
 
 Complete one copy per device.
@@ -77,6 +90,7 @@ backup file should be `…​.webm` and play in the archive. Also verify:
 
 **AUTOMATED PASS** — `npm run typecheck`, `npm test`, `npm run build` all green.
 
-**PHYSICAL DEVICE VALIDATION: PENDING** — iPhone and Android runs of this checklist have not yet
-been performed. Do not claim iPhone/Android validation until the tables above are filled in on
-real hardware.
+**PHYSICAL IPHONE CORE FLOW: PASS — owner-attested, 2026-08-31.**
+
+**VOICE EDGE CASES: PENDING. ANDROID PHYSICAL VALIDATION: PENDING.** Do not broaden the recorded
+iPhone core result to any unexecuted checklist item.
