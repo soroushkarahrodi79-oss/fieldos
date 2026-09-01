@@ -8,7 +8,7 @@ Priority definitions:
 
 Every P0 below is traced to the core workflow. If it isn't necessary for that workflow, it isn't P0.
 
-## Implementation snapshot — 2026-08-31
+## Implementation snapshot — 2026-09-01
 
 - Implemented in code: P0-1 through P0-20, including the five-screen local workflow, honest GPS
   failure states, nearby asset selection, one-photo capture, non-destructive editing/location
@@ -36,8 +36,12 @@ Every P0 below is traced to the core workflow. If it isn't necessary for that wo
   schema or Dexie migration**, no map-only persisted coordinates. PMTiles / offline basemap / tracking
   remain deferred. Spatial transformation logic is isolated in `src/spatial/` with focused unit tests;
   MapLibre rendering is not unit-tested (validated by production preview + browser QA).
+- Validated by owner attestation on 2026-09-01: **P1 Spatial Map MVP — physical iPhone PASS**. This
+  closes the map MVP validation phase. Android validation is not claimed.
+- Corrected on 2026-09-01: New Observation offers separate native **Take photo** and **Choose photo**
+  actions. Both stage the same single optional photo and use the existing local media persistence path.
 - Next engineering state: OPFS or AI work remain deferred and bounded by the product contract; offline
-  basemap (PMTiles) is the natural next spatial phase, gated on field validation of the online map.
+  basemap (PMTiles) remains deferred.
 - Post-MVP P1/P2 scope remains deferred unless the product contract is deliberately changed.
 
 ---
@@ -65,7 +69,8 @@ Every P0 below is traced to the core workflow. If it isn't necessary for that wo
 - **P0-10** Evidence control: OBSERVED default / MEASURED (+ value/unit + optional context) /
   REPORTED (+ optional source note).
 - **P0-11** Graceful geolocation failure: denied/timeout/unavailable → set `locationStatus`, **save anyway**, no fabricated coordinate.
-- **P0-12** One photo per observation via native capture; never blocks save; blob stored in IndexedDB.
+- **P0-12** One photo per observation via native camera capture or existing photo/file selection;
+  never blocks save; blob stored in IndexedDB.
 - **P0-13** Save is instant, local, never network-gated; returns to list with new item on top.
 - **P0-13b** Geospatial context without a map: distance to nearby assets + selection from
   nearby/recent assets (haversine helper; no map library).
