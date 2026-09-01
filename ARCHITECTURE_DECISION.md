@@ -97,7 +97,7 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
 |------|------------------|
 | Any backend / DB server / API | No sync in MVP; adds infra, auth, ops. Local-first first. |
 | Auth / accounts | Non-goal; `observerName` string suffices. |
-| Map tile library (Leaflet/MapLibre) + offline tiles | Big complexity, low field value vs coordinate capture. **P1.** P0 geospatial context = GPS capture + asset coordinates + **haversine distance to nearby/recent assets** (a ~10-line helper, no dependency). |
+| Map tile library (Leaflet/MapLibre) + offline tiles | Big complexity, low field value vs coordinate capture for **P0**. P0 geospatial context = GPS capture + asset coordinates + **haversine distance to nearby/recent assets** (a ~10-line helper, no dependency). **The interactive map ships in P1-6 with MapLibre GL JS (online basemap only); offline tiles/PMTiles are still rejected until field validation justifies them** — see "Spatial map (P1-6)" below. |
 | Redux / heavy state libs | App state is small; React state/context or a tiny store (Zustand) is plenty. |
 | ORM heavier than Dexie | Overkill for 4 entities. |
 | Background Sync / Push | Unreliable/absent on iOS; not needed with no backend. |
@@ -158,6 +158,39 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
 6. **Export/backup is lossless and portable.** Round-trip check: canonical `observations.json`
    serialize→deserialize reproduces records verbatim (UUIDs/timestamps preserved); GeoJSON opens in
    QGIS; CSV opens in Excel; the ZIP backup contains manifest + files + all media.
+
+## Spatial map (P1-6) — MapLibre GL JS, online basemap only
+
+- **Why MapLibre GL JS.** It is open-source (BSD-3), needs **no API key and no paid tile provider**,
+  renders any tile source, and is the natural path to *later* offline vector basemaps (e.g. PMTiles)
+  without swapping libraries. That forward-compatibility, plus a keyless/offline-friendly footprint,
+  fits an offline-first PWA better than token-gated Mapbox or a raster-only Leaflet. It is the one new
+  runtime dependency this feature adds.
+- **Derived views, not a new truth.** Map features live in `src/spatial/` and are **derived** from
+  domain entities (`raw entity != map presentation object`). They are never persisted, never bump a
+  schema version, and never override the canonical record. Observation placement reuses the existing
+  derived `effectiveLocation` policy: the manual `locationAdjustment` when present, else the raw fix,
+  else no marker (no fabricated coordinate). The immutable capture block is only **read**, never
+  mutated; the popup states honestly when a mapped position is *manually adjusted* and that the raw
+  GPS is retained in provenance — it never implies the adjusted coordinate was the original fix.
+- **No schema / DB migration.** The map adds no store, no index, and no persisted coordinate; DB
+  stays at Dexie v2 and the logical schema at v3.
+- **Online basemap only, degrades gracefully.** The basemap is **OpenStreetMap standard raster tiles**
+  (keyless, attributed `© OpenStreetMap contributors`) — suitable for MVP/testing, **not** high-volume
+  production per the OSM tile usage policy. The MapLibre style is an **inline object, not a remote
+  style URL**, so map construction never depends on the network: offline, only the tile *images* fail,
+  and the app shows a "Basemap unavailable" message while observation/asset/current-position overlays
+  stay renderable and every record remains reachable through the normal (non-map) workflow. This is
+  **not** "offline maps"; PMTiles / cached tiles / tracking / GPX / KML remain out of scope.
+- **Current position.** A single `getCurrentPosition` fix via the existing geolocation module — no
+  `watchPosition`, no track, no speed/heading derivation. Permission denial is non-fatal: the map
+  still renders records.
+- **Bundle.** MapLibre loads as a **lazy chunk** (dynamic import) so the core offline capture shell
+  stays small; the chunk is still precached, so the map works offline once visited, and a load
+  failure never blocks the rest of FieldOS.
+- **Testing boundary.** Pure spatial transforms (placement, asset/device features, viewport framing,
+  selection resolution, basemap fallback) are unit-tested in `src/spatial/`; live MapLibre WebGL
+  rendering is validated by production preview + browser QA, not brittle screenshot tests.
 
 ## Testing requirements (architectural, not aspirational)
 
