@@ -8,12 +8,15 @@
 // Source: OpenStreetMap standard raster tiles. Keyless and free, but the OSM tile usage policy
 // (https://operations.osmfoundation.org/policies/tiles/) forbids heavy/bulk use — this is suitable
 // for MVP and field TESTING only, NOT high-volume production. Attribution is REQUIRED and shown.
+//
+// The current OSM tile usage policy specifies the single canonical endpoint
+// `https://tile.openstreetmap.org/{z}/{x}/{y}.png`. The legacy `a./b./c.` tile subdomains are
+// deprecated (HTTP/2 makes them unnecessary) and MUST NOT be reintroduced. We make only normal
+// interactive, viewport-only tile requests: no prefetch, no bulk download, no offline caching.
 
-/** OSM standard raster tile endpoints. */
+/** The single canonical OSM standard raster tile endpoint (no deprecated a./b./c. subdomains). */
 export const OSM_RASTER_TILES: readonly string[] = [
-  'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
+  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
 ];
 
 /** Required OSM attribution string. Must remain visible on the map. */

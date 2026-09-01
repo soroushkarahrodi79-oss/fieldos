@@ -3,6 +3,7 @@ import { observationMapFeatures } from './observationMapFeature';
 import {
   BASEMAP_BACKGROUND,
   OSM_ATTRIBUTION,
+  OSM_RASTER_TILES,
   basemapUnavailableMessage,
   buildBasemapStyle,
 } from './basemap';
@@ -17,6 +18,23 @@ describe('basemap style', () => {
     // Every tile endpoint is a concrete https URL template — no remote style document is fetched.
     for (const tile of style.sources.osm.tiles) {
       expect(tile).toMatch(/^https:\/\/.+\{z\}\/\{x\}\/\{y\}/);
+    }
+  });
+
+  it('uses ONLY the single canonical OSM endpoint required by the tile usage policy', () => {
+    // The current OSM tile usage policy specifies exactly this endpoint.
+    expect(OSM_RASTER_TILES).toEqual(['https://tile.openstreetmap.org/{z}/{x}/{y}.png']);
+    expect(buildBasemapStyle().sources.osm.tiles).toEqual([
+      'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    ]);
+  });
+
+  it('never reintroduces the deprecated a./b./c. tile subdomains', () => {
+    // Guard against accidental regression to the deprecated subdomain endpoints.
+    const allTiles = [...OSM_RASTER_TILES, ...buildBasemapStyle().sources.osm.tiles];
+    for (const tile of allTiles) {
+      expect(tile).not.toMatch(/https:\/\/[abc]\.tile\.openstreetmap\.org/);
+      expect(tile).not.toMatch(/\/\/[abc]\./);
     }
   });
 

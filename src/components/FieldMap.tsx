@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import maplibregl, { type StyleSpecification } from 'maplibre-gl';
+// MapLibre GL JS v6 ships named/namespace exports only (no default export), so import the namespace.
+import * as maplibregl from 'maplibre-gl';
+import type { StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { captureCurrentLocation } from '../domain/geolocation';
 import { assetTypeLabels, categoryLabels, readable } from '../domain/labels';
