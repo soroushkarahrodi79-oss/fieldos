@@ -22,19 +22,40 @@ The repository contains the first usable MVP workflow:
 
 Test deployment: [https://soroushkarahrodi79-oss.github.io/fieldos/](https://soroushkarahrodi79-oss.github.io/fieldos/)
 
-The P0 physical-device gate (iPhone and Android) is recorded as **passed** on 2026-08-21, based on
-the repository owner's attestation against the checklist in
-[docs/DEVICE_SMOKE_TEST.md](docs/DEVICE_SMOKE_TEST.md) — see
-[docs/DEVICE_TEST_RESULT.md](docs/DEVICE_TEST_RESULT.md) for the recorded result and reopening
-conditions. **FIRST FIELD RUN: PASS — owner-attested, 2026-08-31.** The real 60–120 minute workflow
-completed offline with no intended data loss; tested close/reopen persistence, exports, and backup
-checks passed, and the owner reports they would rely on FieldOS in field use. Exact counts and
-timings were not recorded. See [docs/FIRST_FIELD_RUN.md](docs/FIRST_FIELD_RUN.md) for the evidence
-record and [MVP_BACKLOG.md](MVP_BACKLOG.md) for the next engineering state.
+**FieldOS completed its first real 60–120 minute field run on 2026-08-31**, on a physical iPhone:
+offline capture, tested close/reopen persistence, export, and backup all passed with no intended
+data loss, and the owner reports they would rely on FieldOS in field use. This is one owner-attested
+session on one platform — not broad field validation, and not a claim that Android has been
+physically tested. See [docs/FIRST_FIELD_RUN.md](docs/FIRST_FIELD_RUN.md) for the full evidence
+record and reopening conditions, and the validation table below for what each result does and does
+not cover.
 
-The core physical iPhone voice-recording path is also **PASS — owner-attested, 2026-08-31**. This
-does not close the separate voice edge-case or Android checks; those remain pending in
-[docs/VOICE_NOTES_SMOKE_TEST.md](docs/VOICE_NOTES_SMOKE_TEST.md).
+## Validation status
+
+Evidence comes from three different sources that are **not interchangeable**: automated tests (run
+on every commit), physical-device checklists (manual, owner-attested, no independent audit), and the
+one real field run. "Tested once on iPhone" is not the same claim as "validated" or
+"production-ready," and neither implies Android has been checked — no physical Android device has
+been used with FieldOS yet, which is an untested evidence boundary, not a product failure.
+
+| Capability | Evidence status |
+| --- | --- |
+| Data layer, capture immutability, serializers, backup (unit tests) | Automated, CI-verified on every commit |
+| Offline launch, capture, persistence, export/backup — physical iPhone | Device-tested, owner-attested, 2026-08-21 ([DEVICE_TEST_RESULT.md](docs/DEVICE_TEST_RESULT.md)) |
+| Same checklist — physical Android | **Pending.** Not yet run on a physical Android device. |
+| First real field session (offline capture → export/backup, ~60–120 min) | Completed once, iPhone, 2026-08-31, owner-attested ([FIRST_FIELD_RUN.md](docs/FIRST_FIELD_RUN.md)) |
+| Voice note — capture, save, playback — physical iPhone | Device-tested, owner-attested, 2026-08-31 |
+| Voice note — permission denial, storage pressure, 3-minute cap, unsupported browser | Not yet exercised ([VOICE_NOTES_SMOKE_TEST.md](docs/VOICE_NOTES_SMOKE_TEST.md)) |
+| Voice note — physical Android | Pending (same Android boundary as above) |
+| Voice transcription | Not implemented — out of scope; voice notes stay as raw audio |
+| Repeated or long-duration field campaigns | Not yet validated — one session only |
+| GPS positional accuracy | Not independently measured — capture is functional and provenance is preserved, but accuracy figures were not recorded |
+
+**Can claim:** FieldOS survived one real offline field session on one physical iPhone with no
+reported data loss, and separately passed an iPhone device checklist and iPhone voice-note core
+flow. **Cannot yet claim:** that FieldOS is validated, production-ready, field-proven, reliable
+across conditions, or cross-platform verified — those all require more sessions and an independent
+Android pass. See [MVP_BACKLOG.md](MVP_BACKLOG.md) for the next engineering state.
 
 ## Run locally
 

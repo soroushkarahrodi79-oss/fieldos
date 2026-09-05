@@ -1,12 +1,19 @@
 # P0-21 physical-device gate result
 
+**Device scope: physical iPhone only.** [DEVICE_SMOKE_TEST.md](DEVICE_SMOKE_TEST.md) calls for both
+an iPhone and an Android device; this attestation covers iPhone. No physical Android device has been
+used to run this checklist, so Android remains **pending** — this is an untested evidence boundary,
+not a reported failure.
+
 | Field | Result |
 | --- | --- |
-| Status | **PASS** |
+| Status | **PASS (iPhone)** |
 | Confirmed | 2026-08-21 |
+| Device | Physical iPhone, installed PWA |
 | Checklist | [DEVICE_SMOKE_TEST.md](DEVICE_SMOKE_TEST.md) |
 | Confirmation source | Repository owner reported that all checklist items were checked and correct |
-| Release decision | Proceed to the first 1–2 hour field run |
+| Android | Pending — not yet tested on physical hardware |
+| Release decision | Proceed to the first 1–2 hour field run (on the validated iPhone) |
 
 The repository intentionally does not contain test exports, precise coordinates, photographs, or
 device identifiers. Those artifacts can contain sensitive metadata and should be retained privately
