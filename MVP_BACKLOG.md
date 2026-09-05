@@ -13,9 +13,11 @@ Every P0 below is traced to the core workflow. If it isn't necessary for that wo
 - Implemented in code: P0-1 through P0-20, including the five-screen local workflow, honest GPS
   failure states, nearby asset selection, one-photo capture, non-destructive editing/location
   adjustment, data export, ZIP backup, durability banner, and automated domain/data/export tests.
-- Completed by owner attestation on 2026-08-21: **P0-21 physical iPhone and Android smoke testing**,
+- Completed by owner attestation on 2026-08-21: **P0-21 physical-device smoke testing on iPhone**,
   using [docs/DEVICE_SMOKE_TEST.md](docs/DEVICE_SMOKE_TEST.md). The recorded gate result is in
-  [docs/DEVICE_TEST_RESULT.md](docs/DEVICE_TEST_RESULT.md).
+  [docs/DEVICE_TEST_RESULT.md](docs/DEVICE_TEST_RESULT.md). Android physical-device testing has not
+  been performed and remains pending — the P0-21 checklist calls for both platforms, but only iPhone
+  evidence exists.
 - Completed by owner attestation on 2026-08-31: **FIRST FIELD RUN: PASS**. The 60–120 minute real
   field workflow passed its executed acceptance checks, including offline capture, tested
   close/reopen persistence, export, and backup, with no intended data loss. Exact counts and timing
