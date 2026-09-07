@@ -22,8 +22,8 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
 
 ### TypeScript — **ADOPT (strong yes)**
 - *Problem it solves:* the whole product is about **provenance integrity**. Types make the
-  data model (evidence methods, immutable capture block, CapturedLocation, discriminated
-  ObservationValue, schemaVersion) enforceable
+  data model (evidence methods, immutable capture block, CapturedLocation, protocol-driven
+  ObservationValue semantics with runtime validation, schemaVersion) enforceable
   and refactor-safe. This is exactly where TS pays off.
 - *Platform alternative:* JSDoc types — weaker. Adopt real TS.
 
@@ -82,6 +82,15 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
 - *Verdict:* **Accept** — this is the one MVP dependency beyond the core stack, and it is justified
   by "export ≠ backup when media exists."
 
+### Restore + SHA-256 payload verification — **ADOPT (bounded, local-only)**
+- Full ZIP and canonical JSON are inspected and runtime-validated before mutation. A dedicated
+  Dexie transaction reconstructs validated records verbatim; collision rejection prevents overwrite,
+  merge, and UUID remapping.
+- New manifests hash exact payload bytes with Web Crypto SHA-256 (not `manifest.json`). Verification
+  is a corruption/change check relative to that manifest, not a digital signature, authentication,
+  tamper-proofing, or legal chain of custody. Pre-hash archives remain restorable as explicitly
+  legacy-unverified.
+
 ### Storage-health utilities — **ADOPT (platform APIs, no dependency)**
 - *Problem it solves:* durability is **not guaranteed** and must be observable. Wrap
   `navigator.storage.persist()`, `persisted()`, and `estimate()` into a small module used to
@@ -138,7 +147,10 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
    upgrades that entity's `schemaVersion` to the current schema. Schema 3 (P1-5) **does** take a real
    Dexie upgrade (**DB version 1 → 2**) because it adds a new `observationAudit` store; the logical
    FieldOS schema is a separate counter (**2 → 3**). The upgrade re-declares the four original stores
-   unchanged so existing rows are preserved, and manufactures no historical entries.
+   unchanged so existing rows are preserved, and manufactures no historical entries. Schema 4
+   (Protocol Engine v1) adds the additive nullable `FieldSession.protocolSnapshot` object field and,
+   like schema 2, takes **no Dexie migration** (DB stays at **version 2**); a stored session missing
+   the field normalizes to `null` on read without rewriting the row.
 5. **Append-only revision history, transactionally atomic (P1-5).** Beyond `editCount`, each
    observation has a durable `observationAudit` log answering *what changed, when, and the previous
    state*. It is append-only **at the application layer** (no public update/delete) — deliberately
@@ -173,8 +185,10 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
   else no marker (no fabricated coordinate). The immutable capture block is only **read**, never
   mutated; the popup states honestly when a mapped position is *manually adjusted* and that the raw
   GPS is retained in provenance — it never implies the adjusted coordinate was the original fix.
-- **No schema / DB migration.** The map adds no store, no index, and no persisted coordinate; DB
-  stays at Dexie v2 and the logical schema at v3.
+- **No schema / DB migration.** The map itself introduced no schema or DB migration: it adds no
+  store, no index, and no persisted coordinate. At map delivery the logical schema was v3; the
+  current application remains at Dexie v2 while Protocol Engine later advanced the logical schema
+  to v4.
 - **Online basemap only, degrades gracefully.** The basemap is **OpenStreetMap standard raster tiles**
   (keyless, attributed `© OpenStreetMap contributors`) — suitable for MVP/testing, **not** high-volume
   production per the OSM tile usage policy. The MapLibre style is an **inline object, not a remote
@@ -191,6 +205,38 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
 - **Testing boundary.** Pure spatial transforms (placement, asset/device features, viewport framing,
   selection resolution, basemap fallback) are unit-tested in `src/spatial/`; live MapLibre WebGL
   rendering is validated by production preview + browser QA, not brittle screenshot tests.
+
+## Protocol Engine (v1) — definition-driven observation vocabulary
+
+- **Problem it solves.** P0 coupled the observation vocabulary to application code (a closed
+  TypeScript union `ObservationValue` + a `CATEGORY_VALUES` table). Correct for the MVP, but it meant
+  a new field methodology would require rewriting the observation-form engine. The Protocol Engine
+  makes the vocabulary **definition-driven** so new domains do not rebuild the capture UI.
+- **Deliberately narrow.** A protocol answers only *"what kinds of observations may be recorded, and
+  what do the controlled values mean?"*. It is **not** a generic form builder / survey platform: no
+  arbitrary field types, questions, branching, calculations, scoring, or UI layout, and **no embedded
+  executable code** (pure-JSON, runtime-validated definitions only). v1 has no user authoring,
+  import, marketplace, or remote registry — protocols come from a trusted built-in module
+  (`src/protocol/registry.ts`); external packaging is a future FieldPack gate.
+- **Preserve the serialized shape.** Observation stays `{ category, value }` of machine ids —
+  no destructive migration. Compile-time correctness is replaced by **runtime validation**
+  (`src/protocol/validation.ts`, enforced at every write), not weakened.
+- **Evidence stays separate.** OBSERVED/MEASURED/REPORTED remain FieldOS-owned; protocols never
+  define evidence fields. Protocols define WHAT is assessed; evidence defines HOW.
+- **Immutable per-session snapshot.** Each session embeds a validated deep copy of its protocol
+  (`FieldSession.protocolSnapshot`), so a session is self-describing and portable with no remote
+  registry, and later protocol changes cannot retro-alter historical meaning. It is write-once —
+  there is no "change protocol" for an existing session.
+- **Legacy honesty.** Pre-engine sessions have `protocolSnapshot: null`; the app renders/validates
+  them against the legacy Tourism vocabulary without fabricating a snapshot. Historical absence stays
+  absent (normalized to `null` on read; never rewritten).
+- **No new dependency, no DB migration.** Pure TypeScript module; logical schema 3 → 4, Dexie DB
+  stays at version 2. Restore validates a present snapshot's structure before any write and blocks
+  conservatively on a malformed or newer-than-supported protocol.
+- **Testing boundary.** Protocol structure validation, observation-against-protocol validation,
+  label resolution, session binding/immutability, and export/restore round-tripping are unit-tested,
+  including with a **synthetic second protocol** (categories/values absent from Tourism Core) to
+  prove nothing assumes tourism category names.
 
 ## Testing requirements (architectural, not aspirational)
 

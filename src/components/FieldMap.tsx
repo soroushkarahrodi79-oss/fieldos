@@ -4,7 +4,9 @@ import * as maplibregl from 'maplibre-gl';
 import type { StyleSpecification } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { captureCurrentLocation } from '../domain/geolocation';
-import { assetTypeLabels, categoryLabels, readable } from '../domain/labels';
+import { assetTypeLabels, readable } from '../domain/labels';
+import { resolveCategoryLabel, resolveValueLabel } from '../protocol/resolve';
+import type { FieldProtocol } from '../protocol/types';
 import type { Asset, Observation, Uuid } from '../domain/types';
 import { assetMapFeatures } from '../spatial/assetMapFeature';
 import { basemapUnavailableMessage, buildBasemapStyle } from '../spatial/basemap';
@@ -17,6 +19,8 @@ import type { AssetMapFeature, DeviceMapFeature, ObservationMapFeature } from '.
 interface FieldMapProps {
   observations: readonly Observation[];
   assets: readonly Asset[];
+  /** The session's resolved protocol — drives observation category/value labels on the map. */
+  protocol: FieldProtocol;
   /** Open the existing full observation-detail screen. */
   onOpenObservation: (id: Uuid) => void;
 }
@@ -36,18 +40,20 @@ function formatTime(value: string): string {
 /** Build a styled, accessible marker element for one feature (shape + text, never colour alone). */
 function markerElement(
   feature: ObservationMapFeature | AssetMapFeature | DeviceMapFeature,
+  protocol: FieldProtocol,
 ): HTMLElement {
   const el = document.createElement('button');
   el.type = 'button';
   el.className = `map-marker map-marker-${feature.kind}`;
 
   if (feature.kind === 'observation') {
-    const label = categoryLabels[feature.category];
+    const label = resolveCategoryLabel(protocol, feature.category);
+    const valueLabel = resolveValueLabel(protocol, feature.category, feature.value);
     el.classList.add(`placement-${feature.placement}`);
     el.textContent = label.slice(0, 1);
     el.setAttribute(
       'aria-label',
-      `Observation: ${label}${feature.value ? ` ${readable(feature.value)}` : ''}, ` +
+      `Observation: ${label}${valueLabel ? ` ${valueLabel}` : ''}, ` +
         `${feature.placement === 'adjusted' ? 'manually adjusted position' : 'captured position'}`,
     );
     if (feature.placement === 'adjusted') {
@@ -68,7 +74,7 @@ function markerElement(
   return el;
 }
 
-export function FieldMap({ observations, assets, onOpenObservation }: FieldMapProps) {
+export function FieldMap({ observations, assets, protocol, onOpenObservation }: FieldMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<maplibregl.Map | null>(null);
   const markersRef = useRef<maplibregl.Marker[]>([]);
@@ -197,7 +203,7 @@ export function FieldMap({ observations, assets, onOpenObservation }: FieldMapPr
       feature: ObservationMapFeature | AssetMapFeature | DeviceMapFeature,
       onClick?: () => void,
     ) => {
-      const el = markerElement(feature);
+      const el = markerElement(feature, protocol);
       if (onClick) el.addEventListener('click', onClick);
       const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
         .setLngLat([feature.coordinate.longitude, feature.coordinate.latitude])
@@ -214,7 +220,7 @@ export function FieldMap({ observations, assets, onOpenObservation }: FieldMapPr
     for (const feature of observationFeatures) {
       add(feature, () => setSelection({ kind: 'observation', id: feature.id }));
     }
-  }, [observationFeatures, assetFeatures, device, ready]);
+  }, [observationFeatures, assetFeatures, device, ready, protocol]);
 
   const nothingToShow =
     observationFeatures.length === 0 && assetFeatures.length === 0 && device === null;
@@ -245,6 +251,7 @@ export function FieldMap({ observations, assets, onOpenObservation }: FieldMapPr
         {selectedObservation && (
           <ObservationCard
             feature={selectedObservation}
+            protocol={protocol}
             onOpen={() => onOpenObservation(selectedObservation.id)}
             onClose={() => setSelection(null)}
           />
@@ -298,10 +305,12 @@ export function FieldMap({ observations, assets, onOpenObservation }: FieldMapPr
 
 function ObservationCard({
   feature,
+  protocol,
   onOpen,
   onClose,
 }: {
   feature: ObservationMapFeature;
+  protocol: FieldProtocol;
   onOpen: () => void;
   onClose: () => void;
 }) {
@@ -311,11 +320,11 @@ function ObservationCard({
         ×
       </button>
       <div className="eyebrow">Observation</div>
-      <h2>{categoryLabels[feature.category]}</h2>
+      <h2>{resolveCategoryLabel(protocol, feature.category)}</h2>
       <dl className="map-card-grid">
         <div>
           <dt>Value</dt>
-          <dd>{feature.value ? readable(feature.value) : 'Free observation'}</dd>
+          <dd>{feature.value ? resolveValueLabel(protocol, feature.category, feature.value) : 'Free observation'}</dd>
         </div>
         <div>
           <dt>Evidence</dt>

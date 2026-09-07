@@ -4,6 +4,10 @@ import { nowIso } from '../domain/time';
 import { normalizeCapturedLocation } from '../domain/geolocation';
 import { buildAuditEntry, snapshotObservationForAudit } from './audit';
 import { SCHEMA_VERSION } from '../version';
+import { DEFAULT_PROTOCOL } from '../protocol/registry';
+import { protocolForSession } from '../protocol/resolve';
+import { ProtocolValidationError, validateObservationAgainstProtocol, validateProtocol } from '../protocol/validation';
+import type { FieldProtocol } from '../protocol/types';
 import type {
   Asset,
   AssetSource,
@@ -51,9 +55,35 @@ export class ObservationNotFoundError extends Error {
   }
 }
 
+/** A restore attempted to reuse an existing local identity. Nothing has been written. */
+export class RestoreCollisionError extends Error {
+  readonly ids: string[];
+  constructor(ids: string[]) {
+    super(`Restore blocked because ${ids.length} imported ID${ids.length === 1 ? '' : 's'} already exist locally.`);
+    this.name = 'RestoreCollisionError';
+    this.ids = ids;
+  }
+}
+
 /** Domain-level outcomes that are correct answers, not persistence failures — passed through as-is. */
 function isDomainError(cause: unknown): boolean {
-  return cause instanceof ObservationNotFoundError;
+  return (
+    cause instanceof ObservationNotFoundError ||
+    cause instanceof RestoreCollisionError ||
+    // A protocol validation failure inside a transaction is a deterministic rejection, not a
+    // storage failure. It still rolls the transaction back (nothing invalid is committed), but it
+    // must reach the caller as itself so the UI can show the real reason.
+    cause instanceof ProtocolValidationError
+  );
+}
+
+/** Validated canonical records accepted only by the dedicated restore path. */
+export interface RestoreRecords {
+  session: FieldSession;
+  assets: Asset[];
+  observations: Observation[];
+  auditEntries: ObservationAuditEntry[];
+  media: MediaAttachment[];
 }
 
 async function persist<T>(operation: string, fn: () => Promise<T>): Promise<T> {
@@ -76,6 +106,15 @@ function normalizeObservation(observation: Observation): Observation {
   };
 }
 
+/**
+ * Present a session through today's deterministic domain shape. A session stored before Protocol
+ * Engine v1 has no `protocolSnapshot` property; normalize it to explicit `null` on READ only —
+ * the stored row is never rewritten, so historical absence stays historical absence.
+ */
+function normalizeSession(session: FieldSession): FieldSession {
+  return { ...session, protocolSnapshot: session.protocolSnapshot ?? null };
+}
+
 // ---------------------------------------------------------------------------
 // Input shapes (only the fields a caller supplies)
 // ---------------------------------------------------------------------------
@@ -85,6 +124,12 @@ export interface CreateSessionInput {
   purpose?: string | null;
   observerName?: string | null;
   deviceLabel?: string | null;
+  /**
+   * Protocol to bind (immutably) to the new session. Defaults to the built-in Tourism Field
+   * Observation Core. The definition is validated and deep-copied into the session snapshot, so
+   * later changes to a registry protocol object can never alter historical sessions.
+   */
+  protocol?: FieldProtocol;
 }
 
 export interface CreateAssetInput {
@@ -127,6 +172,9 @@ export class Repositories {
 
   async createSession(input: CreateSessionInput): Promise<FieldSession> {
     const ts = nowIso();
+    // Validate + deep-copy the chosen (or default) protocol into an immutable snapshot. A malformed
+    // protocol fails here, before anything is written — a session can never bind an invalid protocol.
+    const protocolSnapshot = validateProtocol(input.protocol ?? DEFAULT_PROTOCOL);
     const session: FieldSession = {
       id: newId(),
       schemaVersion: SCHEMA_VERSION,
@@ -138,17 +186,20 @@ export class Repositories {
       closedAt: null,
       updatedAt: ts,
       deviceLabel: input.deviceLabel ?? null,
+      protocolSnapshot,
     };
     await persist('createSession', () => this.database.fieldSessions.add(session));
     return session;
   }
 
-  getSession(id: Uuid): Promise<FieldSession | undefined> {
-    return this.database.fieldSessions.get(id);
+  async getSession(id: Uuid): Promise<FieldSession | undefined> {
+    const session = await this.database.fieldSessions.get(id);
+    return session ? normalizeSession(session) : undefined;
   }
 
-  listSessions(): Promise<FieldSession[]> {
-    return this.database.fieldSessions.orderBy('createdAt').reverse().toArray();
+  async listSessions(): Promise<FieldSession[]> {
+    const rows = await this.database.fieldSessions.orderBy('createdAt').reverse().toArray();
+    return rows.map(normalizeSession);
   }
 
   async closeSession(id: Uuid): Promise<void> {
@@ -191,6 +242,19 @@ export class Repositories {
   // ---- Observations ------------------------------------------------------
 
   async createObservation(input: CreateObservationInput): Promise<Observation> {
+    // Correctness gate (Protocol Engine v1): the observation's category/value must belong to the
+    // session's protocol, and a required-note policy must be honoured — validated against the
+    // session's immutable snapshot (or the legacy vocabulary for a pre-Protocol-Engine session).
+    // This throws a ProtocolValidationError before any write, so nothing invalid is persisted.
+    const session = await this.getSession(input.sessionId);
+    if (!session) throw new Error(`Session ${input.sessionId} not found`);
+    const { protocol } = protocolForSession(session);
+    validateObservationAgainstProtocol(protocol, {
+      category: input.observation.category,
+      value: input.observation.value,
+      note: input.note ?? null,
+    });
+
     const ts = nowIso();
     const observation: Observation = {
       id: newId(),
@@ -261,6 +325,7 @@ export class Repositories {
     return persist('updateInterpretation', () =>
       this.database.transaction(
         'rw',
+        this.database.fieldSessions,
         this.database.observations,
         this.database.observationAudit,
         async () => {
@@ -289,6 +354,16 @@ export class Repositories {
             editCount: existing.editCount + 1,
             edited: true,
           };
+          // Re-validate the edited interpretation against the session's protocol (snapshot, or the
+          // legacy vocabulary for a legacy session). A ProtocolValidationError rolls back the whole
+          // transaction, so an edit can never persist an out-of-protocol category/value/note.
+          const storedSession = await this.database.fieldSessions.get(existing.sessionId);
+          const { protocol } = protocolForSession(storedSession ? normalizeSession(storedSession) : null);
+          validateObservationAgainstProtocol(protocol, {
+            category: updated.observation.category,
+            value: updated.observation.value,
+            note: updated.note,
+          });
           await this.database.observations.put(updated);
           await this.appendAuditEntry(updated, 'INTERPRETATION_UPDATED', before, updated.updatedAt);
           return updated;
@@ -475,6 +550,52 @@ export class Repositories {
 
   listMedia(observationId: Uuid): Promise<MediaAttachment[]> {
     return this.database.media.where('observationId').equals(observationId).toArray();
+  }
+
+  // ---- Restore ----------------------------------------------------------
+
+  /**
+   * Check every imported identity against every FieldOS entity store. UUIDs are intentionally
+   * never remapped: a collision blocks reconstruction rather than corrupting provenance.
+   */
+  async findRestoreCollisions(ids: readonly string[]): Promise<string[]> {
+    const unique = [...new Set(ids)];
+    const found = await Promise.all(unique.map(async (id) => {
+      const rows = await Promise.all([
+        this.database.fieldSessions.get(id), this.database.assets.get(id),
+        this.database.observations.get(id), this.database.observationAudit.get(id),
+        this.database.media.get(id),
+      ]);
+      return rows.some(Boolean) ? id : null;
+    }));
+    return found.filter((id): id is string => id !== null);
+  }
+
+  /**
+   * Reconstruct externally validated evidence verbatim in one transaction. This deliberately
+   * bypasses normal create APIs, which mint IDs/timestamps/audit events and would falsify history.
+   */
+  async restoreRecords(records: RestoreRecords): Promise<void> {
+    const ids = [
+      records.session.id,
+      ...records.assets.map((item) => item.id),
+      ...records.observations.map((item) => item.id),
+      ...records.auditEntries.map((item) => item.id),
+      ...records.media.map((item) => item.id),
+    ];
+    await persist('restore', () => this.database.transaction(
+      'rw', this.database.fieldSessions, this.database.assets, this.database.observations,
+      this.database.observationAudit, this.database.media,
+      async () => {
+        const collisions = await this.findRestoreCollisions(ids);
+        if (collisions.length) throw new RestoreCollisionError(collisions);
+        await this.database.fieldSessions.add(records.session);
+        if (records.assets.length) await this.database.assets.bulkAdd(records.assets);
+        if (records.observations.length) await this.database.observations.bulkAdd(records.observations);
+        if (records.auditEntries.length) await this.database.observationAudit.bulkAdd(records.auditEntries);
+        if (records.media.length) await this.database.media.bulkAdd(records.media);
+      },
+    ));
   }
 }
 

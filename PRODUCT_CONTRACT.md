@@ -69,6 +69,11 @@ saved data must never silently disappear.**
 - Observations: fast capture with automatic timestamp + geolocation + accuracy.
 - A **small** controlled vocabulary of observation categories, each with its **own category-specific
   value set** (no universal ordinal scale, no numeric score, no composite index) + free text.
+  **Protocol Engine v1:** this vocabulary is now **definition-driven** rather than hard-coded — each
+  session binds an immutable, versioned **protocol snapshot** that defines its categories/values, and
+  the built-in Tourism Field Observation Core protocol is the default (same vocabulary as P0). This is
+  a narrow, evidence-oriented protocol model, **not** a generic form/survey builder, and remains
+  single-user and client-only; user-authored/imported protocols stay out of scope (future FieldPack).
 - Evidence method per observation (OBSERVED / MEASURED / REPORTED — see DATA_MODEL.md §evidence).
 - Location provenance: raw device fix (`capturedLocation`) preserved immutably; manual adjustment
   is non-destructive (`locationAdjustment`); `effectiveLocation` is derived.

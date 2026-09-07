@@ -8,6 +8,8 @@
 //  - Evidence method is one of OBSERVED / MEASURED / REPORTED only. No DERIVED / MISSING.
 //  - Absence of data is represented by null, never by a fabricated value or coordinate.
 
+import type { FieldProtocol } from '../protocol/types';
+
 /** ISO-8601 timestamp string with offset, e.g. "2026-08-21T14:03:22.000+02:00". */
 export type IsoTimestamp = string;
 
@@ -53,46 +55,23 @@ export interface Coordinate {
 }
 
 // ---------------------------------------------------------------------------
-// Observation value: discriminated per-category vocabularies (correction §2)
+// Observation value: protocol-driven, definition-validated (Protocol Engine v1)
 // ---------------------------------------------------------------------------
 
-export type ObservationCategory =
-  | 'visitor_pressure'
-  | 'parking_pressure'
-  | 'path_condition'
-  | 'litter'
-  | 'infrastructure_condition'
-  | 'signage_condition'
-  | 'accessibility_barrier'
-  | 'visitor_management'
-  | 'other';
+// P0 encoded the vocabulary as a CLOSED discriminated union of tourism categories plus a
+// CATEGORY_VALUES table. Protocol Engine v1 removes that closed union so categories/values are
+// driven by the session's protocol snapshot at runtime. The SERIALIZED shape is preserved exactly:
+// an observation value is a `{ category, value }` pair of machine ids. `value` is `null` for a
+// free/`other`-style category. Correctness is not weakened — it moves from compile-time to runtime
+// validation against the protocol (see `src/protocol/validation.ts`). The controlled vocabulary
+// itself lives in protocol definitions (see `src/protocol/tourismCore.ts` for the built-in one).
 
-export type ObservationValue =
-  | { category: 'visitor_pressure'; value: 'NONE' | 'LOW' | 'MODERATE' | 'HIGH' }
-  | { category: 'parking_pressure'; value: 'LOW' | 'MODERATE' | 'HIGH' | 'FULL' }
-  | { category: 'path_condition'; value: 'GOOD' | 'FAIR' | 'POOR' | 'BLOCKED' }
-  | { category: 'litter'; value: 'NONE' | 'LOW' | 'MODERATE' | 'HIGH' }
-  | { category: 'infrastructure_condition'; value: 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED' }
-  | { category: 'signage_condition'; value: 'GOOD' | 'DAMAGED' | 'MISSING' | 'UNCLEAR' }
-  | { category: 'accessibility_barrier'; value: 'NONE' | 'MINOR' | 'MAJOR' | 'UNKNOWN' }
-  | { category: 'visitor_management'; value: 'PRESENT' | 'ABSENT' | 'NOT_ASSESSED' }
-  | { category: 'other'; value: null };
-
-/**
- * The allowed values per category — the single source of truth for the UI's value row
- * and for validation. `other` has no categorical value.
- */
-export const CATEGORY_VALUES = {
-  visitor_pressure: ['NONE', 'LOW', 'MODERATE', 'HIGH'],
-  parking_pressure: ['LOW', 'MODERATE', 'HIGH', 'FULL'],
-  path_condition: ['GOOD', 'FAIR', 'POOR', 'BLOCKED'],
-  litter: ['NONE', 'LOW', 'MODERATE', 'HIGH'],
-  infrastructure_condition: ['GOOD', 'FAIR', 'POOR', 'DAMAGED'],
-  signage_condition: ['GOOD', 'DAMAGED', 'MISSING', 'UNCLEAR'],
-  accessibility_barrier: ['NONE', 'MINOR', 'MAJOR', 'UNKNOWN'],
-  visitor_management: ['PRESENT', 'ABSENT', 'NOT_ASSESSED'],
-  other: [],
-} as const satisfies Record<ObservationCategory, readonly string[]>;
+export interface ObservationValue {
+  /** A category id defined by the session's protocol (e.g. 'visitor_pressure', 'other'). */
+  category: string;
+  /** A value id belonging to that category, or `null` for a free/`other`-style category. */
+  value: string | null;
+}
 
 // ---------------------------------------------------------------------------
 // Evidence method (correction §3): OBSERVED / MEASURED / REPORTED only
@@ -123,6 +102,14 @@ export interface FieldSession {
   closedAt: IsoTimestamp | null;
   updatedAt: IsoTimestamp;
   deviceLabel: string | null;
+  /**
+   * Immutable protocol snapshot bound at session creation (Protocol Engine v1). Written once and
+   * never changed — there is deliberately no "change protocol" for an existing session. `null` for
+   * a LEGACY session created before the Protocol Engine: historical absence is preserved, never
+   * back-filled with a fabricated snapshot. Legacy sessions render via the legacy FieldOS
+   * vocabulary (see `src/protocol/resolve.ts`).
+   */
+  protocolSnapshot: FieldProtocol | null;
 }
 
 export type AssetType =

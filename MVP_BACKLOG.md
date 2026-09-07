@@ -43,8 +43,23 @@ existing contract. Code, merged history, and recorded evidence together determin
   schema or Dexie migration**, no map-only persisted coordinates. PMTiles / offline basemap / tracking
   remain deferred. Spatial transformation logic is isolated in `src/spatial/` with focused unit tests;
   MapLibre rendering is not unit-tested (validated by production preview + browser QA).
-- Validated by owner attestation on 2026-09-01: **P1 Spatial Map MVP — physical iPhone PASS**. This
-  closes the map MVP validation phase. Android validation is not claimed.
+- Delivered on 2026-09-07: **P1-6 Restore + backup integrity**. Sessions can be restored from a
+  preflighted full FieldOS ZIP or data-only canonical JSON with provenance-preserving IDs/timestamps,
+  atomic Dexie writes, collision rejection, and clear media-loss warnings for JSON. New ZIP manifests
+  carry SHA-256 payload hashes; this verifies payload bytes against the manifest only, not authorship
+  or tamper-proof evidence. Older valid backups remain explicitly legacy-unverified.
+- Delivered on 2026-09-07: **Protocol Engine v1**. The observation vocabulary is now definition-driven
+  rather than a hard-coded TypeScript union. Each session binds an **immutable, versioned protocol
+  snapshot** (`src/protocol/`) defining its categories, controlled values, labels, and note policy;
+  capture, detail/edit, map, revision-history, and export all resolve through it. The built-in
+  **Tourism Field Observation Core** (`fieldos-tourism-core` v1) reproduces the exact P0 vocabulary
+  and is the default. Correctness moved from a compile-time union to runtime validation enforced at
+  every write. Serialized observation shape (`{ category, value }`) is unchanged; canonical JSON/ZIP
+  carry the snapshot and restore validates its structure (blocking malformed/newer protocols). Legacy
+  sessions keep `protocolSnapshot: null` and use the legacy Tourism vocabulary with no fabricated
+  snapshot. Logical schema 3 → 4; **no Dexie migration** (DB stays version 2). Claim boundary: this is
+  a narrow, evidence-oriented protocol model — **not** a generic form/survey builder, and v1 has no
+  user protocol authoring, import, or remote registry (deferred to a future FieldPack gate).
 - Corrected on 2026-09-01: New Observation offers separate native **Take photo** and **Choose photo**
   actions. Both stage the same single optional photo and use the existing local media persistence path.
 - The historical P0 decision was list-first, with no interactive map library. The later P1-1 map
@@ -133,7 +148,16 @@ existing contract. Code, merged history, and recorded evidence together determin
   before/after snapshots of mutable state (raw capture excluded and provably unchanged). No history
   fabricated for legacy records; full trail in canonical JSON + ZIP backup; read-only History surface
   on observation detail. Claim boundary: append-only local history, not cryptographic immutability.
-- **P1-6** Restore UI: re-import a full-session backup / canonical `observations.json` (the format is P0; the UI is P1). **Deferred; not implemented.**
+- **P1-6** Restore UI: re-import a full-session backup / canonical `observations.json` (the format is
+  P0; the UI is P1). **Delivered 2026-09-07.** Flow is preflight → preview → confirm → one atomic
+  restore: a full FieldOS ZIP or data-only canonical JSON is parsed and runtime-validated, previewed,
+  then reconstructed in a single Dexie transaction with provenance-preserving IDs/timestamps and **no
+  UUID remapping**. Collisions with existing sessions/records are **rejected** (no overwrite, no
+  merge, no silent partial restore); JSON-only imports restore data without fabricating media and warn
+  about media loss. New ZIP manifests carry **SHA-256 payload-byte** hashes verified before any write;
+  older valid backups without hashes are treated as **legacy-unverified, not verified**. Integrity is
+  a payload corruption/change check only — **not** signing, authentication, tamper-proofing, or a
+  legal chain of custody.
 - **P1-7** Refine per-category value sets or add categories, if field evidence shows gaps. **Deferred; not implemented.**
 - **P1-8** Multiple photos per observation. **Deferred; not implemented.**
 - **P1-9** Coordinate-precision reduction option when sharing (privacy). **Deferred; not implemented.**

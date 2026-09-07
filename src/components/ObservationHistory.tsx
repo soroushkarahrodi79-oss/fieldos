@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { repositories } from '../db/repositories';
+import { resolveCategoryLabel, resolveValueLabel } from '../protocol/resolve';
+import type { FieldProtocol } from '../protocol/types';
 import type {
   Evidence,
   LocationAdjustment,
@@ -25,10 +27,6 @@ const EVENT_LABELS: Record<ObservationAuditEntry['eventType'], string> = {
   RESTORED: 'Restored to live list',
 };
 
-function readable(value: string): string {
-  return value.toLowerCase().replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
 function formatTime(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.valueOf())
@@ -36,8 +34,10 @@ function formatTime(value: string): string {
     : date.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-function describeObservationValue(value: ObservationValue): string {
-  return value.value ? `${readable(value.category)} · ${readable(value.value)}` : readable(value.category);
+function describeObservationValue(protocol: FieldProtocol, value: ObservationValue): string {
+  const category = resolveCategoryLabel(protocol, value.category);
+  const valueLabel = resolveValueLabel(protocol, value.category, value.value);
+  return valueLabel ? `${category} · ${valueLabel}` : category;
 }
 
 function describeEvidence(evidence: Evidence): string {
@@ -74,6 +74,7 @@ interface FieldChange {
 
 /** Concise field-level diff between two snapshots (used for interpretation edits). */
 function interpretationChanges(
+  protocol: FieldProtocol,
   before: ObservationAuditState,
   after: ObservationAuditState,
 ): FieldChange[] {
@@ -81,8 +82,8 @@ function interpretationChanges(
   if (JSON.stringify(before.observation) !== JSON.stringify(after.observation)) {
     changes.push({
       field: 'Category',
-      from: describeObservationValue(before.observation),
-      to: describeObservationValue(after.observation),
+      from: describeObservationValue(protocol, before.observation),
+      to: describeObservationValue(protocol, after.observation),
     });
   }
   if (JSON.stringify(before.evidence) !== JSON.stringify(after.evidence)) {
@@ -97,9 +98,9 @@ function interpretationChanges(
   return changes;
 }
 
-function EntryDetails({ entry }: { entry: ObservationAuditEntry }) {
+function EntryDetails({ entry, protocol }: { entry: ObservationAuditEntry; protocol: FieldProtocol }) {
   if (entry.eventType === 'INTERPRETATION_UPDATED' && entry.before) {
-    const changes = interpretationChanges(entry.before, entry.after);
+    const changes = interpretationChanges(protocol, entry.before, entry.after);
     if (changes.length === 0) return <p className="history-detail muted">No field-level changes recorded.</p>;
     return (
       <ul className="history-changes">
@@ -131,7 +132,7 @@ function EntryDetails({ entry }: { entry: ObservationAuditEntry }) {
   if (entry.eventType === 'CREATED') {
     return (
       <p className="history-detail">
-        Recorded as {describeObservationValue(entry.after.observation)} · {describeEvidence(entry.after.evidence)}.
+        Recorded as {describeObservationValue(protocol, entry.after.observation)} · {describeEvidence(entry.after.evidence)}.
       </p>
     );
   }
@@ -141,10 +142,13 @@ function EntryDetails({ entry }: { entry: ObservationAuditEntry }) {
 export function ObservationHistory({
   observationId,
   refreshToken,
+  protocol,
 }: {
   observationId: Uuid;
   /** Any value that changes after a mutation, to trigger a reload (e.g. observation.updatedAt). */
   refreshToken?: string;
+  /** Session protocol used to resolve category/value labels in the diff. */
+  protocol: FieldProtocol;
 }) {
   const [entries, setEntries] = useState<ObservationAuditEntry[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -221,7 +225,7 @@ export function ObservationHistory({
                     <small className="muted">{formatTime(entry.occurredAt)}</small>
                   </div>
                 </div>
-                <EntryDetails entry={entry} />
+                <EntryDetails entry={entry} protocol={protocol} />
               </li>
             ))}
           </ol>

@@ -1,20 +1,10 @@
-// Shared human-readable labels and formatting for controlled vocabularies.
-// Extracted so the capture/detail screens and the spatial map render the SAME wording
-// (single source of truth — a category renamed here changes everywhere at once).
+// Shared human-readable labels and formatting.
+//
+// Observation CATEGORY/VALUE labels are no longer hard-coded here — they are resolved from the
+// session's protocol (see `src/protocol/resolve.ts`). This module keeps only vocabulary that is
+// NOT protocol-driven (asset types) plus the generic `readable` token formatter.
 
-import type { AssetType, ObservationCategory } from './types';
-
-export const categoryLabels: Record<ObservationCategory, string> = {
-  visitor_pressure: 'Visitor pressure',
-  parking_pressure: 'Parking pressure',
-  path_condition: 'Path condition',
-  litter: 'Litter',
-  infrastructure_condition: 'Infrastructure',
-  signage_condition: 'Signage',
-  accessibility_barrier: 'Accessibility',
-  visitor_management: 'Visitor management',
-  other: 'Other',
-};
+import type { AssetType } from './types';
 
 export const assetTypeLabels: Record<AssetType, string> = {
   trailhead: 'Trailhead',

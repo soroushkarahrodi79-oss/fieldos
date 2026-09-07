@@ -6,8 +6,10 @@ FieldOS is an offline-first progressive web app for structured tourism field res
 
 The repository contains the first usable MVP workflow:
 
-- create, resume, inspect, and close local field sessions;
-- capture category-specific observations with timestamps and honest GPS status;
+- create, resume, inspect, and close local field sessions, each **bound to an immutable, versioned
+  observation protocol** (Protocol Engine v1) that defines its categories, values, and labels;
+- capture category-specific observations with timestamps and honest GPS status, with the capture and
+  validation UI driven by the session's protocol rather than a hard-coded vocabulary;
 - record observed, measured, or reported evidence;
 - attach a photo, record an optional offline voice note, and link a nearby known asset;
 - review and edit interpretation while preserving the immutable capture block;
@@ -17,7 +19,7 @@ The repository contains the first usable MVP workflow:
 - open a **spatial map** of a session (MapLibre GL) to see observations, assets, and the current
   position as points, tap a point to inspect it, and jump to the full observation detail — with an
   **online-only** basemap that degrades gracefully (records stay usable if tiles cannot load);
-- export portable data or create a ZIP backup with media;
+- export portable data, create a ZIP backup with media, and conservatively restore a full ZIP or data-only canonical JSON;
 - surface storage durability and quota failures instead of reporting false success.
 
 Test deployment: [https://soroushkarahrodi79-oss.github.io/fieldos/](https://soroushkarahrodi79-oss.github.io/fieldos/)
@@ -74,11 +76,13 @@ npm test
 npm run build
 ```
 
-The browser app uses IndexedDB. Clearing site data removes local FieldOS records, so create a full backup before clearing browser storage.
+The browser app uses IndexedDB. Clearing site data removes local FieldOS records, so create a full backup before clearing browser storage. New full backups carry SHA-256 payload hashes; restore verifies that payload bytes match the archive manifest, which is corruption detection—not a signature, authenticated authorship, tamper-proof evidence, or legal chain of custody.
 
 ## Architecture
 
-FieldOS deliberately has no backend in the MVP. React and TypeScript provide the UI and domain model, Dexie wraps IndexedDB, the Web Geolocation API captures location provenance, Workbox precaches the application shell, and `fflate` creates offline ZIP backups. The optional spatial map uses **MapLibre GL JS** (open-source, no API key) rendering derived map features over an **online-only** OpenStreetMap raster basemap — suitable for MVP/testing, not high-volume production, and **not** an offline-maps feature (PMTiles/offline tiles are deferred). The map is a read-only derived view; it consumes the existing canonical data, adds no persisted coordinates, and requires no schema or database migration. See [ARCHITECTURE_DECISION.md](ARCHITECTURE_DECISION.md) and [DATA_MODEL.md](DATA_MODEL.md).
+FieldOS deliberately has no backend in the MVP. React and TypeScript provide the UI and domain model, Dexie wraps IndexedDB, the Web Geolocation API captures location provenance, Workbox precaches the application shell, and `fflate` creates offline ZIP backups.
+
+**Protocol Engine (v1).** The observation vocabulary is definition-driven, not hard-coded. Each session embeds an immutable, versioned **protocol snapshot** (`src/protocol/`) that defines the categories, controlled values, labels, and note policy for that session; the capture, validation, detail, map, and export surfaces all read from it. The built-in **Tourism Field Observation Core** protocol carries the original vocabulary and is the default. Evidence provenance (OBSERVED / MEASURED / REPORTED) stays FieldOS-owned and is deliberately not part of any protocol. It is **not** a generic form builder or survey platform, and v1 has no user-authored protocols, protocol import, or remote registry. Sessions created before the engine keep `protocolSnapshot: null` and render via the legacy vocabulary; no fabricated snapshot is written for them. The optional spatial map uses **MapLibre GL JS** (open-source, no API key) rendering derived map features over an **online-only** OpenStreetMap raster basemap — suitable for MVP/testing, not high-volume production, and **not** an offline-maps feature (PMTiles/offline tiles are deferred). The map is a read-only derived view; it consumes the existing canonical data, adds no persisted coordinates, and requires no schema or database migration. See [ARCHITECTURE_DECISION.md](ARCHITECTURE_DECISION.md) and [DATA_MODEL.md](DATA_MODEL.md).
 
 ## Privacy
 
