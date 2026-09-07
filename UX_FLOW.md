@@ -17,11 +17,12 @@
 ## Surface map (challenged from the brief's 5)
 
 The brief proposed: Field Sessions · Map/Assets · New Observation · Observation detail · Export.
-**Revised MVP** demotes the interactive basemap (offline tiles = iOS trap, low field value)
-to P1 and makes surface 2 **list-first**:
+**Historical P0** demoted the interactive basemap (offline tiles = iOS trap, low field value)
+to P1 and made surface 2 **list-first**. P1-1 later added a read-only MapLibre map with an
+online-only basemap; the list remains the durable primary workflow.
 
 1. **Field Sessions** (home)
-2. **Session** = Observation list + Assets (list-first; map is P1)
+2. **Session** = Observation list + Assets, with an optional read-only Map view
 3. **New Observation** (capture)
 4. **Observation detail / edit**
 5. **Export**
@@ -73,14 +74,20 @@ Plus a persistent **Storage/durability banner** (not a screen) when data is at r
      expects a note.
   4. **Evidence** — default **OBSERVED**; a compact toggle to MEASURED (reveals value+unit+context)
      or REPORTED (reveals optional source note).
-  5. **Note** — optional free text (voice-to-text is the OS keyboard's job, not ours in MVP).
-  6. **Photo** — one **＋ Photo** button using native capture; optional, never blocks save.
+  5. **Note** — optional free text (voice-to-text is the OS keyboard's job; FieldOS does not
+     transcribe).
+  6. **Photo** — separate native **Take photo** and **Choose photo** actions stage one optional
+     photo; neither blocks save.
+  7. **Voice note** — one optional raw offline recording; recording is user-initiated and never
+     blocks saving the structured observation. See the validation boundary in
+     `docs/VOICE_NOTES_SMOKE_TEST.md`.
 - **Navigation:** Save → returns to Session list with the new item on top (and a brief undo/confirm).
   Back/cancel → confirm discard only if something was entered.
 - **Offline:** the entire screen is offline-native. GPS is the only device dependency and it works offline.
-- **Geospatial context (list-first, no map):** the screen may show **distance to the nearest known
+- **Geospatial context:** capture remains list-first and may show **distance to the nearest known
   assets** and offer **selection from nearby/recent assets** to attach `assetId`, using asset
-  coordinates + a haversine calc. No Leaflet/MapLibre/tiles.
+  coordinates + a haversine calculation. The separate P1-1 map is read-only and derived; its
+  online-only tiles are not required for capture or record access.
 - **Empty state:** n/a (creation screen) — but sensible defaults mean a valid observation is one tap
   (pick category) + Save (for `other`, a note).
 - **Failure states (explicit, because this is where field reality bites):**
@@ -140,6 +147,6 @@ Two clearly separated outputs (see DATA_MODEL.md §Export vs Backup):
 
 - No multi-step wizard for a single observation (kills speed).
 - No login, no onboarding tour, no settings maze.
-- No interactive basemap in MVP (coordinate capture doesn't need one; tiles offline are a trap).
+- No offline basemap or tile pack (coordinate capture does not need one; offline tiles remain deferred).
 - No required free-text anywhere.
 - No per-observation "confidence %" or score (would be fake precision).

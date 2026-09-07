@@ -15,13 +15,15 @@
 - **`LocationEvidence` is NOT a separate entity.** It is an **embedded value object**
   (`CapturedLocation` / `LocationAdjustment`) stored *inside* an Observation. A normalized
   location table buys nothing in a single-user offline app and adds joins.
-- **`Asset` is optional** and lightweight (a named point). **Point geometry only** in MVP; polygons are P1.
+- **`Asset` is optional** and lightweight (a named point). Point geometry is implemented; polygons
+  remain deferred P1 work.
 - **IDs are client-generated UUIDv4** (`crypto.randomUUID()`) so offline records never collide on a future sync.
 - **Timestamps are ISO-8601 strings with offset**, plus retained raw epoch ms where it matters.
   The device clock may be wrong offline — we record as-is and never "correct" it. Export never
   regenerates a timestamp.
 - **Capture is immutable.** The raw device fix and the capture timestamp are written once and
-  never edited. Interpretation fields are editable, with lightweight edit tracking. No event sourcing in P0.
+  never edited. Interpretation fields are editable; a later P1-5 extension adds targeted,
+  append-only local revision history. Full event sourcing is not implemented.
 - **No universal ordinal scale, no numeric score, no composite index.** Each category owns its
   own controlled value set (below); values across categories are **not** semantically comparable.
 
@@ -64,8 +66,9 @@ Legend: **R** = required, **O** = optional. Types are logical (stored as JSON in
 | `createdAt` | ISO-8601 | R | | immutable |
 | `updatedAt` | ISO-8601 | R | | |
 
-> Asset coordinates power P0 geospatial context: **distance to nearby assets** and
-> **selection from nearby/recent assets** (haversine helper) — no map library, no tiles.
+> Asset coordinates power the historical P0 geospatial context: **distance to nearby assets** and
+> **selection from nearby/recent assets** (haversine helper). The later P1-1 map derives its points
+> from canonical entities; it adds no persisted geometry. Offline tiles remain unimplemented.
 
 ---
 
@@ -180,7 +183,7 @@ type ObservationValue =
 
 ### Evidence — discriminated (correction §3)
 
-P0 evidence methods: **OBSERVED, MEASURED, REPORTED**. `DERIVED` and `MISSING` are **not** exposed.
+Implemented evidence methods: **OBSERVED, MEASURED, REPORTED**. `DERIVED` and `MISSING` are **not** exposed.
 Absence of evidence is represented by **missing/null data**, never by a pretend "MISSING" source.
 
 ```ts
@@ -207,7 +210,7 @@ type Evidence =
 | `id` | UUIDv4 string | R | |
 | `schemaVersion` | int | R | current `3`; legacy `1`/`2` remain readable |
 | `observationId` | UUIDv4 | R | owner |
-| `kind` | enum | R | `photo` (MVP) \| `audio` (P1) |
+| `kind` | enum | R | `photo` \| `audio` (P1-2 delivered; raw audio only, no transcription) |
 | `blob` | Blob | R | stored in IndexedDB (raw evidence, not re-encoded) |
 | `mimeType` | string | R | e.g. `image/jpeg` |
 | `byteSize` | int | R | for quota accounting |

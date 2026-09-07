@@ -62,8 +62,8 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
 ### Media Capture — **ADOPT native `<input type="file" accept="image/*" capture>` (MVP)**
 - *Problem it solves:* a photo, reliably, on iOS and Android, using the OS camera.
 - *Why not getUserMedia/MediaRecorder for photos?* Historically flaky in standalone iOS PWAs and
-  more code. The native input is boring and reliable. **Audio (MediaRecorder) is P1** precisely
-  because of iOS quirks. Adopt the simplest thing that works.
+  more code. The native input is boring and reliable. **Historical P0 deferred audio to P1** because
+  of iOS quirks; P1-2 subsequently delivered offline voice notes with explicit validation limits.
 
 ### GeoJSON / CSV / JSON export — **ADOPT (all three, dependency-free)**
 - *Problem it solves:* portability (§10.8). GeoJSON → QGIS/mapping; CSV → Excel/analysts;
@@ -97,7 +97,7 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
 |------|------------------|
 | Any backend / DB server / API | No sync in MVP; adds infra, auth, ops. Local-first first. |
 | Auth / accounts | Non-goal; `observerName` string suffices. |
-| Map tile library (Leaflet/MapLibre) + offline tiles | Big complexity, low field value vs coordinate capture for **P0**. P0 geospatial context = GPS capture + asset coordinates + **haversine distance to nearby/recent assets** (a ~10-line helper, no dependency). **The interactive map ships in P1-6 with MapLibre GL JS (online basemap only); offline tiles/PMTiles are still rejected until field validation justifies them** — see "Spatial map (P1-6)" below. |
+| Map tile library (Leaflet/MapLibre) + offline tiles | Big complexity, low field value vs coordinate capture for **historical P0**. P0 geospatial context = GPS capture + asset coordinates + **haversine distance to nearby/recent assets** (a ~10-line helper, no dependency). **The interactive map later shipped in P1-1 with MapLibre GL JS (online basemap only); offline tiles/PMTiles remain rejected until field validation justifies them** — see "Spatial map (P1-1)" below. |
 | Redux / heavy state libs | App state is small; React state/context or a tiny store (Zustand) is plenty. |
 | ORM heavier than Dexie | Overkill for 4 entities. |
 | Background Sync / Push | Unreliable/absent on iOS; not needed with no backend. |
@@ -139,7 +139,7 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
    Dexie upgrade (**DB version 1 → 2**) because it adds a new `observationAudit` store; the logical
    FieldOS schema is a separate counter (**2 → 3**). The upgrade re-declares the four original stores
    unchanged so existing rows are preserved, and manufactures no historical entries.
-7. **Append-only revision history, transactionally atomic (P1-5).** Beyond `editCount`, each
+5. **Append-only revision history, transactionally atomic (P1-5).** Beyond `editCount`, each
    observation has a durable `observationAudit` log answering *what changed, when, and the previous
    state*. It is append-only **at the application layer** (no public update/delete) — deliberately
    **not** described as cryptographically tamper-proof, signed, or a legal chain of custody, since P0
@@ -152,14 +152,14 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
    index that rejects duplicates at the database layer. The immutable raw capture block is never copied
    into snapshots and never appears as edited. Event sourcing remains out of scope: this is a targeted
    revision log over mutable fields, not a full event-sourced rebuild of every entity.
-5. **Durability is engineered and validated, not assumed.** Request `storage.persist()` on first
+6. **Durability is engineered and validated, not assumed.** Request `storage.persist()` on first
    write; surface `persisted()`/`estimate()` state to the UI; make the **full-session backup** the
    trusted backstop. Durability is proven by real-device testing.
-6. **Export/backup is lossless and portable.** Round-trip check: canonical `observations.json`
+7. **Export/backup is lossless and portable.** Round-trip check: canonical `observations.json`
    serialize→deserialize reproduces records verbatim (UUIDs/timestamps preserved); GeoJSON opens in
    QGIS; CSV opens in Excel; the ZIP backup contains manifest + files + all media.
 
-## Spatial map (P1-6) — MapLibre GL JS, online basemap only
+## Spatial map (P1-1) — MapLibre GL JS, online basemap only
 
 - **Why MapLibre GL JS.** It is open-source (BSD-3), needs **no API key and no paid tile provider**,
   renders any tile source, and is the natural path to *later* offline vector basemaps (e.g. PMTiles)
@@ -198,7 +198,8 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
   block; manual-fix-does-not-overwrite-raw; edit tracking; storage/quota-failure surfaces (never
   silent); serializers (canonical JSON/CSV/GeoJSON) golden-file tested; ZIP backup manifest + media;
   UUID/timestamp preservation through round-trip.
-- **Real-device smoke test** on a physical iPhone + Android before the field test: offline launch,
-  capture with GPS, background+restart survival, quota with photos, export via share sheet.
+- The historical real-device smoke-test plan called for a physical iPhone + Android before the
+  field test. Recorded evidence now covers iPhone only; Android remains pending. See
+  `docs/DEVICE_TEST_RESULT.md` rather than inferring broader validation.
 - Prefer **Vitest** (pairs with Vite) for units; manual device checklist for the rest in MVP.
   No heavy e2e harness for v0.
