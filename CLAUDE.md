@@ -50,6 +50,25 @@ validate against the legacy Tourism vocabulary — no fabricated snapshot is wri
 3 → 4 (additive nullable `FieldSession.protocolSnapshot`; **no Dexie migration** — DB stays at
 version 2). Evidence methods stay FieldOS-owned and separate from protocols.
 
+**Campaign + FieldPack v1 (delivered):** FieldOS can prepare a bounded mission before going outside
+and operate it fully offline. A `.fieldpack` (a ZIP of `manifest.json` + `protocol.json` +
+`assets.geojson`, with **required** SHA-256 payload integrity) is validated entirely in memory
+(preflight-first: manifest → SHA-256 → protocol → GeoJSON → collision → preview → confirm), then
+installed **atomically** as a local **`FieldCampaign`** binding exactly one immutable protocol
+snapshot plus preloaded **point** assets. Campaigns can also be created locally against a built-in
+protocol. A session may be bound to a campaign (`FieldSession.campaignId`) and inherits a copy of
+the campaign's protocol snapshot; standalone/legacy sessions stay `campaignId: null`. Campaign
+assets carry `campaignId` + `sourceRef` (external mission id preserved alongside the local UUID) and
+`sessionId: null` — they are resolved by reference into a session's asset queries, never duplicated.
+Duplicate `fieldpackId+version` imports are blocked; a same-id different-version import is blocked as
+an unsupported upgrade (no auto-update/merge). Logical schema 4 → 5; **Dexie DB 2 → 3** (new
+`campaigns` store + `campaignId` indexes; legacy rows preserved, campaign fields normalize to `null`
+on read). Session export carries lightweight `campaignContext`; a campaign-bound session restores
+self-contained even when its Campaign is absent — no Campaign is ever fabricated. This closes the
+previously deferred "preloaded GeoJSON assets" capability for points only. It is **not** remote
+mission deployment, a signed/trusted-publisher package, automatic FieldPack updates, a FieldPack or
+protocol authoring UI, coverage intelligence, or offline map tiles.
+
 Recorded validation is deliberately narrower: an owner-attested iPhone device checklist
 (2026-08-21), one owner-attested real 60–120 minute iPhone field run (2026-08-31), iPhone voice
 core flow (2026-08-31), and iPhone map validation (2026-09-01). This is not a production-ready,
@@ -59,11 +78,14 @@ See `MVP_BACKLOG.md` and the linked evidence records for exact boundaries.
 
 ## Explicitly deferred
 
-Campaign / FieldPack mission packaging (including preloaded GeoJSON assets), Coverage Intelligence,
+FieldPack **authoring/export UI**, campaign **updates/merge/auto-upgrade**, non-point (polygon)
+FieldPack assets, offline map tiles inside packs, remote FieldPack registry, Coverage Intelligence,
 generic protocol form builder / user protocol authoring, polygon geometry, multiple photos, privacy
 export profiles, quota dashboard, selected/per-observation export, offline PMTiles basemap, cloud
 sync, multi-user capability, dashboards/analytics, AI voice-to-structured suggestions /
-transcription, and SNTO/HATI integration are not implemented. Do not add them without a deliberate
+transcription, and SNTO/HATI integration are not implemented. (Campaign + FieldPack v1 delivered
+import of a versioned, integrity-checked pack with a protocol and preloaded **point** assets,
+installed as a local Campaign — see above.) Do not add the remaining items without a deliberate
 contract decision.
 
 ## Standard checks

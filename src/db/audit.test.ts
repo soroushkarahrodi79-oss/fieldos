@@ -50,10 +50,12 @@ describe('observation audit — Dexie migration (v1 → v2)', () => {
     await legacyDb.table('media').add({ id: crypto.randomUUID(), observationId, kind: 'photo' });
     legacyDb.close();
 
-    // Re-open under the real app schema, which declares version 2 → triggers the upgrade.
+    // Re-open under the real app schema, which now declares version 3 (P1-5 added observationAudit
+    // at v2; Campaign + FieldPack v1 added the campaigns store and campaignId indexes at v3) →
+    // triggers the full upgrade chain.
     const upgraded = new FieldOsDb(name);
     await upgraded.open();
-    expect(upgraded.verno).toBe(2);
+    expect(upgraded.verno).toBe(3);
 
     // All version-1 rows survive untouched.
     expect(await upgraded.fieldSessions.count()).toBe(1);
@@ -63,9 +65,11 @@ describe('observation audit — Dexie migration (v1 → v2)', () => {
     expect((await upgraded.fieldSessions.get(sessionId))?.title).toBe('v1 session');
     expect((await upgraded.observations.get(observationId))?.note).toBe('v1 observation');
 
-    // The new store exists, is queryable, and starts empty — no fabricated history.
+    // The audit store exists, is queryable, and starts empty — no fabricated history.
     expect(await upgraded.observationAudit.count()).toBe(0);
     expect(await upgraded.observationAudit.where('observationId').equals(observationId).toArray()).toEqual([]);
+    // The campaigns store exists and starts empty — no campaign fabricated for legacy sessions.
+    expect(await upgraded.campaigns.count()).toBe(0);
     upgraded.close();
   });
 });

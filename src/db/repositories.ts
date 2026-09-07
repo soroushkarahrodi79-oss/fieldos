@@ -14,6 +14,7 @@ import type {
   AssetType,
   CapturedLocation,
   Evidence,
+  FieldCampaign,
   FieldSession,
   IsoTimestamp,
   MediaAttachment,
@@ -112,7 +113,26 @@ function normalizeObservation(observation: Observation): Observation {
  * the stored row is never rewritten, so historical absence stays historical absence.
  */
 function normalizeSession(session: FieldSession): FieldSession {
-  return { ...session, protocolSnapshot: session.protocolSnapshot ?? null };
+  return {
+    ...session,
+    protocolSnapshot: session.protocolSnapshot ?? null,
+    // A session stored before Campaign + FieldPack v1 has no `campaignId`; normalize to explicit
+    // null on READ only (a standalone session). The stored row is never rewritten.
+    campaignId: session.campaignId ?? null,
+  };
+}
+
+/**
+ * Present an asset through today's deterministic domain shape. Assets stored before Campaign +
+ * FieldPack v1 have no `campaignId`/`sourceRef`; normalize them to explicit `null` on READ only —
+ * the stored row is never rewritten.
+ */
+function normalizeAsset(asset: Asset): Asset {
+  return {
+    ...asset,
+    campaignId: asset.campaignId ?? null,
+    sourceRef: asset.sourceRef ?? null,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -130,15 +150,30 @@ export interface CreateSessionInput {
    * later changes to a registry protocol object can never alter historical sessions.
    */
   protocol?: FieldProtocol;
+  /**
+   * Bind this session to a Campaign (Campaign + FieldPack v1). When provided, the caller is
+   * responsible for passing the campaign's protocol via `protocol` so the session's immutable
+   * snapshot matches the campaign. Standalone sessions omit it (stored as `null`).
+   */
+  campaignId?: Uuid | null;
 }
 
 export interface CreateAssetInput {
   name: string;
   sessionId?: Uuid | null;
+  campaignId?: Uuid | null;
   assetType?: AssetType | null;
   latitude?: number | null;
   longitude?: number | null;
   source?: AssetSource;
+  sourceRef?: string | null;
+}
+
+export interface CreateCampaignInput {
+  title: string;
+  description?: string | null;
+  /** Protocol to bind (immutably) to the campaign. Defaults to the built-in Tourism Core. */
+  protocol?: FieldProtocol;
 }
 
 export interface CreateObservationInput {
@@ -187,6 +222,7 @@ export class Repositories {
       updatedAt: ts,
       deviceLabel: input.deviceLabel ?? null,
       protocolSnapshot,
+      campaignId: input.campaignId ?? null,
     };
     await persist('createSession', () => this.database.fieldSessions.add(session));
     return session;
@@ -218,11 +254,13 @@ export class Repositories {
       id: newId(),
       schemaVersion: SCHEMA_VERSION,
       sessionId: input.sessionId ?? null,
+      campaignId: input.campaignId ?? null,
       name: input.name,
       assetType: input.assetType ?? null,
       latitude: input.latitude ?? null,
       longitude: input.longitude ?? null,
       source: input.source ?? 'field_created',
+      sourceRef: input.sourceRef ?? null,
       createdAt: ts,
       updatedAt: ts,
     };
@@ -230,13 +268,109 @@ export class Repositories {
     return asset;
   }
 
-  getAsset(id: Uuid): Promise<Asset | undefined> {
-    return this.database.assets.get(id);
+  async getAsset(id: Uuid): Promise<Asset | undefined> {
+    const asset = await this.database.assets.get(id);
+    return asset ? normalizeAsset(asset) : undefined;
   }
 
-  listAssets(sessionId?: Uuid): Promise<Asset[]> {
-    if (sessionId === undefined) return this.database.assets.toArray();
-    return this.database.assets.where('sessionId').equals(sessionId).toArray();
+  async listAssets(sessionId?: Uuid): Promise<Asset[]> {
+    const rows =
+      sessionId === undefined
+        ? await this.database.assets.toArray()
+        : await this.database.assets.where('sessionId').equals(sessionId).toArray();
+    return rows.map(normalizeAsset);
+  }
+
+  /** Preloaded/planned assets belonging to a campaign (sessionId is null for these). */
+  async listCampaignAssets(campaignId: Uuid): Promise<Asset[]> {
+    const rows = await this.database.assets.where('campaignId').equals(campaignId).toArray();
+    return rows.map(normalizeAsset);
+  }
+
+  /**
+   * Every asset visible inside a session: its own session-dropped assets PLUS the planned assets of
+   * the session's campaign (when it belongs to one). Campaign assets are resolved by reference, not
+   * duplicated into the session, and a campaign asset that also somehow carries this sessionId is
+   * de-duplicated by id so it appears exactly once.
+   */
+  async listSessionAssets(session: Pick<FieldSession, 'id' | 'campaignId'>): Promise<Asset[]> {
+    const own = await this.listAssets(session.id);
+    if (!session.campaignId) return own;
+    const campaignAssets = await this.listCampaignAssets(session.campaignId);
+    const seen = new Set(own.map((asset) => asset.id));
+    return [...own, ...campaignAssets.filter((asset) => !seen.has(asset.id))];
+  }
+
+  // ---- Campaigns (Campaign + FieldPack v1) -------------------------------
+
+  /**
+   * Create a local Campaign bound to a trusted built-in protocol (default Tourism Core). This is
+   * the minimal "New Campaign" path — no FieldPack, no asset planner. The protocol is validated and
+   * deep-copied into an immutable snapshot before anything is written.
+   */
+  async createCampaign(input: CreateCampaignInput): Promise<FieldCampaign> {
+    const ts = nowIso();
+    const protocolSnapshot = validateProtocol(input.protocol ?? DEFAULT_PROTOCOL);
+    const campaign: FieldCampaign = {
+      id: newId(),
+      schemaVersion: SCHEMA_VERSION,
+      title: input.title,
+      description: input.description ?? null,
+      protocolSnapshot,
+      createdAt: ts,
+      importedAt: null,
+      source: { type: 'local_created' },
+    };
+    await persist('createCampaign', () => this.database.campaigns.add(campaign));
+    return campaign;
+  }
+
+  getCampaign(id: Uuid): Promise<FieldCampaign | undefined> {
+    return this.database.campaigns.get(id);
+  }
+
+  async listCampaigns(): Promise<FieldCampaign[]> {
+    return this.database.campaigns.orderBy('createdAt').reverse().toArray();
+  }
+
+  /** Sessions belonging to a campaign, newest first. */
+  async listCampaignSessions(campaignId: Uuid): Promise<FieldSession[]> {
+    const rows = await this.database.fieldSessions.where('campaignId').equals(campaignId).toArray();
+    return rows.map(normalizeSession).sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+  }
+
+  /**
+   * Every campaign already installed from the given FieldPack id (any version). Used by the import
+   * preflight to enforce the conservative collision policy: an exact id+version reinstall is blocked
+   * as a duplicate, and a same-id different-version import is blocked as an unsupported upgrade.
+   */
+  async findCampaignsByFieldpackId(fieldpackId: string): Promise<FieldCampaign[]> {
+    const all = await this.database.campaigns.toArray();
+    return all.filter(
+      (campaign) => campaign.source.type === 'fieldpack' && campaign.source.fieldpackId === fieldpackId,
+    );
+  }
+
+  /**
+   * Install a Campaign and its preloaded assets ATOMICALLY (Campaign + FieldPack v1 §12). Either the
+   * campaign and all its assets are written, or nothing is — a failure rolls back the whole
+   * transaction, never leaving a campaign without assets, a partial asset list, or orphaned assets.
+   * An id collision (campaign or asset) is rejected rather than overwriting existing local data.
+   */
+  async installCampaign(campaign: FieldCampaign, assets: readonly Asset[]): Promise<void> {
+    await persist('installCampaign', () =>
+      this.database.transaction('rw', this.database.campaigns, this.database.assets, async () => {
+        const candidateIds = [campaign.id, ...assets.map((asset) => asset.id)];
+        const existing = await Promise.all([
+          this.database.campaigns.get(campaign.id),
+          ...assets.map((asset) => this.database.assets.get(asset.id)),
+        ]);
+        const collisions = candidateIds.filter((_, index) => existing[index]);
+        if (collisions.length) throw new RestoreCollisionError(collisions);
+        await this.database.campaigns.add(campaign);
+        if (assets.length) await this.database.assets.bulkAdd(assets as Asset[]);
+      }),
+    );
   }
 
   // ---- Observations ------------------------------------------------------
@@ -564,7 +698,7 @@ export class Repositories {
       const rows = await Promise.all([
         this.database.fieldSessions.get(id), this.database.assets.get(id),
         this.database.observations.get(id), this.database.observationAudit.get(id),
-        this.database.media.get(id),
+        this.database.media.get(id), this.database.campaigns.get(id),
       ]);
       return rows.some(Boolean) ? id : null;
     }));
@@ -583,9 +717,16 @@ export class Repositories {
       ...records.auditEntries.map((item) => item.id),
       ...records.media.map((item) => item.id),
     ];
+    // `campaigns` is included in the transaction scope (read-only here) because
+    // findRestoreCollisions scans every store, campaigns among them. Restore itself never writes a
+    // campaign — a campaign-bound session is restored self-contained; its Campaign is never
+    // fabricated (see Campaign + FieldPack v1 §21).
     await persist('restore', () => this.database.transaction(
-      'rw', this.database.fieldSessions, this.database.assets, this.database.observations,
-      this.database.observationAudit, this.database.media,
+      'rw',
+      [
+        this.database.fieldSessions, this.database.assets, this.database.observations,
+        this.database.observationAudit, this.database.media, this.database.campaigns,
+      ],
       async () => {
         const collisions = await this.findRestoreCollisions(ids);
         if (collisions.length) throw new RestoreCollisionError(collisions);

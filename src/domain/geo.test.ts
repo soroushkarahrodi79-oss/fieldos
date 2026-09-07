@@ -93,11 +93,13 @@ describe('nearbyAssets', () => {
     id: name,
     schemaVersion: 1,
     sessionId: 's',
+    campaignId: null,
     name,
     assetType: null,
     latitude: lat,
     longitude: lon,
     source: 'field_created',
+    sourceRef: null,
     createdAt: '2026-08-21T09:00:00.000+02:00',
     updatedAt: '2026-08-21T09:00:00.000+02:00',
   });

@@ -88,6 +88,42 @@ export type Evidence =
 // Entities
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Campaign (Campaign + FieldPack v1): a bounded, offline mission context.
+//
+// A FieldCampaign is ORGANISATIONAL context, not evidence. It binds exactly one immutable protocol
+// snapshot and may group multiple Field Sessions and preloaded planned Assets. It has NO observer /
+// auth semantics and NO mutable workflow status (this is a field campaign, not a ticket tracker).
+// The session's own `protocolSnapshot` remains the evidence semantics; the Campaign never overrides
+// or resolves observation meaning at runtime.
+// ---------------------------------------------------------------------------
+
+/**
+ * Where a Campaign came from. A locally created campaign has no external identity; a campaign
+ * installed from a `.fieldpack` records the stable fieldpack identity + version so a later import
+ * of the exact same pack can be detected and blocked (no silent reinstall/merge; see FieldPack
+ * collision policy).
+ */
+export type CampaignSource =
+  | { type: 'local_created' }
+  | { type: 'fieldpack'; fieldpackId: string; fieldpackVersion: number };
+
+export interface FieldCampaign {
+  id: Uuid;
+  schemaVersion: number;
+  title: string;
+  description: string | null;
+  /**
+   * The single immutable protocol snapshot bound to this campaign. New campaign sessions receive a
+   * deep-copied snapshot of THIS protocol; the campaign never rebinds or replaces it in v1.
+   */
+  protocolSnapshot: FieldProtocol;
+  createdAt: IsoTimestamp;
+  /** When this campaign was installed from a FieldPack; `null` for a locally created campaign. */
+  importedAt: IsoTimestamp | null;
+  source: CampaignSource;
+}
+
 export type SessionStatus = 'active' | 'closed';
 
 export interface FieldSession {
@@ -110,6 +146,14 @@ export interface FieldSession {
    * vocabulary (see `src/protocol/resolve.ts`).
    */
   protocolSnapshot: FieldProtocol | null;
+  /**
+   * Organisational link to a Campaign (Campaign + FieldPack v1). `null` for a standalone session
+   * (including every legacy session). A campaign session INHERITS the campaign's protocol at
+   * creation (copied into `protocolSnapshot` above), but does NOT depend on resolving the Campaign
+   * at runtime for its evidence semantics — the snapshot keeps the session self-describing even if
+   * the Campaign entity is later absent (e.g. after restoring only the session).
+   */
+  campaignId: Uuid | null;
 }
 
 export type AssetType =
@@ -127,11 +171,25 @@ export interface Asset {
   id: Uuid;
   schemaVersion: number;
   sessionId: Uuid | null;
+  /**
+   * Organisational link to a Campaign for a PRELOADED/planned mission asset (Campaign + FieldPack
+   * v1). `null` for a standalone/session-dropped asset. A campaign asset has `sessionId: null` and
+   * `campaignId` set: it belongs to the campaign (reusable across its sessions), so `sessionId` is
+   * never abused to represent campaign ownership. Legacy assets normalize to `null`.
+   */
+  campaignId: Uuid | null;
   name: string;
   assetType: AssetType | null;
   latitude: number | null;
   longitude: number | null;
   source: AssetSource;
+  /**
+   * The stable external identifier this asset carried in its FieldPack (`assets.geojson` feature
+   * id), preserved for traceability. FieldOS UUIDs (`id`) and human/mission source refs serve
+   * different purposes and are BOTH kept — `id` is the internal referential key, `sourceRef` is the
+   * external mission identifier. `null` for assets with no external origin.
+   */
+  sourceRef: string | null;
   createdAt: IsoTimestamp;
   updatedAt: IsoTimestamp;
 }

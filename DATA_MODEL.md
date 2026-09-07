@@ -36,7 +36,7 @@ Legend: **R** = required, **O** = optional. Types are logical (stored as JSON in
 | Field | Type | R/O | Allowed / notes | Provenance meaning |
 |------|------|-----|-----------------|--------------------|
 | `id` | UUIDv4 string | R | `crypto.randomUUID()` | stable identity across export/backup |
-| `schemaVersion` | int | R | current `4`; legacy `1`/`2`/`3` remain readable | lets exports be interpreted later |
+| `schemaVersion` | int | R | current `5`; legacy `1`/`2`/`3`/`4` remain readable | lets exports be interpreted later |
 | `title` | string | R | free text, e.g. "Lakeside trail, Aug morning" | human label |
 | `purpose` | string | O | free text | context for later readers |
 | `observerName` | string | O | free text; **self-declared, unverified** | closest we get to "who"; P0 has no auth |
@@ -46,6 +46,13 @@ Legend: **R** = required, **O** = optional. Types are logical (stored as JSON in
 | `updatedAt` | ISO-8601 | R | | last mutation |
 | `deviceLabel` | string | O | UA/platform snapshot at creation | helps explain data quirks later |
 | `protocolSnapshot` | `FieldProtocol` \| null | R (nullable) | immutable protocol bound at creation; `null` for a legacy pre-Protocol-Engine session | makes the session self-describing (see §Field Protocol) |
+| `campaignId` | UUIDv4 \| null | R (nullable) | organisational link to a `FieldCampaign`; `null` for a standalone/legacy session | groups the session under a mission (Campaign + FieldPack v1) |
+
+> **`campaignId` is organisational context, not evidence.** A campaign session inherits a *copy* of
+> the campaign's protocol into its own `protocolSnapshot`, so the session stays self-describing and
+> valid even if the Campaign entity is later absent (e.g. restored on its own). Semantics never
+> depend on resolving the Campaign at runtime. Legacy rows missing the field normalize to `null` on
+> read without being rewritten.
 
 > **`protocolSnapshot` is write-once and immutable** — there is no "change protocol" for an existing
 > session, since that would make its observations semantically ambiguous. A legacy session created
@@ -63,19 +70,28 @@ Legend: **R** = required, **O** = optional. Types are logical (stored as JSON in
 | Field | Type | R/O | Allowed / notes | Provenance meaning |
 |------|------|-----|-----------------|--------------------|
 | `id` | UUIDv4 string | R | | identity |
-| `schemaVersion` | int | R | current `4`; legacy `1`/`2`/`3` remain readable | |
-| `sessionId` | UUIDv4 | O | may be reusable across sessions | link |
+| `schemaVersion` | int | R | current `5`; legacy `1`/`2`/`3`/`4` remain readable | |
+| `sessionId` | UUIDv4 | O | a session-dropped asset; `null` for a campaign-preloaded asset | link |
+| `campaignId` | UUIDv4 \| null | R (nullable) | a preloaded/planned campaign asset (`sessionId` is `null` for these); `null` for a standalone/session asset | reusable mission asset (Campaign + FieldPack v1) |
 | `name` | string | R | free text | label |
 | `assetType` | enum | O | `trailhead` \| `car_park` \| `viewpoint` \| `visitor_centre` \| `path_segment` \| `public_space` \| `other` | coarse classification |
 | `latitude` | number | O | WGS84 | known coordinate (enables nearby/distance) |
 | `longitude` | number | O | WGS84 | |
-| `source` | enum | R | `field_created` \| `preloaded` | field-dropped vs imported reference (imported = P1) |
+| `source` | enum | R | `field_created` \| `preloaded` | field-dropped vs imported reference (`preloaded` now produced by FieldPack import) |
+| `sourceRef` | string \| null | R (nullable) | the external mission id an imported asset carried (its `assets.geojson` feature `id`); `null` for field-created assets | external traceability alongside the local UUID |
 | `createdAt` | ISO-8601 | R | | immutable |
 | `updatedAt` | ISO-8601 | R | | |
 
 > Asset coordinates power the historical P0 geospatial context: **distance to nearby assets** and
 > **selection from nearby/recent assets** (haversine helper). The later P1-1 map derives its points
 > from canonical entities; it adds no persisted geometry. Offline tiles remain unimplemented.
+>
+> **Campaign assets vs `sessionId` (Campaign + FieldPack v1).** A preloaded campaign asset has
+> `sessionId: null` and a set `campaignId` — `sessionId` is never abused to mean campaign ownership.
+> A session's asset queries resolve the union of its own assets and its campaign's planned assets
+> **by reference** (no cloning into each session). `sourceRef` preserves the external mission id
+> (e.g. `trailhead-01`) distinctly from the internal FieldOS UUID; the two identities are both kept.
+> Only **Point** assets are importable — polygon geometry remains deferred.
 
 ---
 
@@ -124,7 +140,7 @@ If `locationStatus !== CAPTURED`, coordinates are `null` — we **never fabricat
 | Field | Type | R/O | Allowed / notes |
 |------|------|-----|-----------------|
 | `id` | UUIDv4 string | R | |
-| `schemaVersion` | int | R | current `4`; legacy `1`/`2`/`3` remain readable |
+| `schemaVersion` | int | R | current `5`; legacy `1`/`2`/`3`/`4` remain readable |
 | `sessionId` | UUIDv4 | R | belongs to a session |
 | `assetId` | UUIDv4 \| null | O | null for ad-hoc points |
 | **— Capture block (IMMUTABLE) —** | | | |
@@ -220,7 +236,7 @@ type Evidence =
 | Field | Type | R/O | Allowed / notes |
 |------|------|-----|-----------------|
 | `id` | UUIDv4 string | R | |
-| `schemaVersion` | int | R | current `4`; legacy `1`/`2`/`3` remain readable |
+| `schemaVersion` | int | R | current `5`; legacy `1`/`2`/`3`/`4` remain readable |
 | `observationId` | UUIDv4 | R | owner |
 | `kind` | enum | R | `photo` \| `audio` (P1-2 delivered; raw audio only, no transcription) |
 | `blob` | Blob | R | stored in IndexedDB (raw evidence, not re-encoded) |
@@ -251,7 +267,7 @@ the store directly; the guarantee is only that FieldOS's own APIs never rewrite 
 | Field | Type | R/O | Allowed / notes |
 |------|------|-----|-----------------|
 | `id` | UUIDv4 string | R | |
-| `schemaVersion` | int | R | current `4` |
+| `schemaVersion` | int | R | current `5` |
 | `observationId` | UUIDv4 | R | owner observation |
 | `sessionId` | UUIDv4 | R | denormalized for efficient session-level export |
 | `sequence` | int | R | **1-based, strictly increasing per observation**; no gaps, no duplicates (see *Uniqueness* below) |
@@ -338,6 +354,71 @@ interface ProtocolValue { id: string; label: string; description: string | null;
   encodes the exact P0 vocabulary above. It also serves as the **legacy vocabulary** for rendering
   and validating sessions whose `protocolSnapshot` is `null`.
 
+---
+
+## Entity: FieldCampaign  *(Campaign + FieldPack v1 — organisational mission context)*
+
+A **Campaign** is a deliberately small, offline mission context: it binds exactly one immutable
+protocol snapshot and may group multiple Field Sessions and preloaded planned Assets. It is **not
+evidence**, has **no observer/auth semantics**, and carries **no mutable workflow status** (no
+todo/assigned/approved/reviewed — a field campaign, not a ticket tracker).
+
+| Field | Type | R/O | Allowed / notes |
+|------|------|-----|-----------------|
+| `id` | UUIDv4 string | R | stable identity |
+| `schemaVersion` | int | R | current `5` |
+| `title` | string | R | free text |
+| `description` | string \| null | R (nullable) | free text |
+| `protocolSnapshot` | `FieldProtocol` | R | the single immutable protocol bound to the campaign; new campaign sessions receive a deep copy |
+| `createdAt` | ISO-8601 | R | immutable |
+| `importedAt` | ISO-8601 \| null | R (nullable) | set when installed from a FieldPack; `null` for a locally created campaign |
+| `source` | discriminated | R | `{ type: 'local_created' }` \| `{ type: 'fieldpack'; fieldpackId: string; fieldpackVersion: number }` |
+
+**Rules:**
+- A campaign binds **exactly one** immutable protocol snapshot in v1 (no rebind/replace).
+- A campaign may contain multiple sessions and multiple preloaded point assets; it is not itself
+  evidence and never overrides observation semantics.
+- **Collision policy:** an exact `fieldpackId + fieldpackVersion` already installed **blocks** a
+  duplicate import; the same `fieldpackId` at a different version **blocks** as an unsupported
+  upgrade. v1 never reinstalls, merges, overwrites, or auto-upgrades a campaign.
+
+### FieldPack format (import-only, v1)
+
+A **FieldPack** (`.fieldpack`) is a ZIP with a fixed, deterministic set of paths:
+
+```
+manifest.json      // identity, version, schema version, REQUIRED SHA-256 payload integrity
+protocol.json      // exactly one FieldProtocol (validated by the Protocol Engine runtime validator)
+assets.geojson     // a GeoJSON FeatureCollection of POINT features (planned assets)
+```
+
+```ts
+interface FieldPackManifest {
+  format: 'fieldos-fieldpack';
+  fieldpackSchemaVersion: number;   // structural version (current 1)
+  fieldpackId: string;
+  fieldpackVersion: number;
+  title: string;
+  description: string | null;
+  createdAt: string;
+  protocolFile: 'protocol.json';
+  assetsFile: 'assets.geojson';
+  integrity: { algorithm: 'SHA-256'; files: Record<string, string> }; // REQUIRED in v1
+}
+```
+
+- **Integrity is required** and covers the exact bytes of `protocol.json` and `assets.geojson` only
+  — the manifest never hashes itself. Verification means only *"payload bytes match the manifest"*;
+  it is **not** a signature, a trusted publisher, authenticated methodology, or tamper-proof evidence.
+- **`assets.geojson`** accepts **Point features only**, each with a stable non-empty `id` (unique
+  source ref), a non-empty `name`, valid WGS84 coordinates, and a known-or-null `assetType`.
+  Polygon/LineString/GeometryCollection/MultiPoint/null geometry and out-of-range coordinates are
+  **rejected** (no fabricated coordinates; polygon assets remain deferred).
+- Import is **preflight-first** and **atomic**: no writes occur before confirmation; on confirm the
+  campaign and all its assets install in one Dexie transaction over `campaigns` + `assets`, or
+  nothing does. FieldPack input is treated as **untrusted** (only the three known paths are
+  consumed; unsafe/`..`/absolute paths and oversized archives are rejected).
+
 ## Cross-cutting provenance guarantees
 
 For any observation a later reader can answer:
@@ -412,6 +493,31 @@ protocol definition is **not** flattened into every row — it lives in canonica
 Restore validates a present `protocolSnapshot`'s **structure** before any write and **blocks** on a
 malformed or newer-than-supported protocol rather than discarding it; a legacy backup with no
 snapshot remains a valid legacy backup.
+
+### Schema 5 compatibility decision (Campaign + FieldPack v1)
+
+Schema 5 adds a **new entity** (`FieldCampaign`, in its own `campaigns` store) plus **additive
+nullable fields** on existing stores: `FieldSession.campaignId`, and `Asset.campaignId` +
+`Asset.sourceRef`. The new store **and** the new `campaignId` indexes on `fieldSessions`/`assets`
+require a real Dexie upgrade; the additive fields alone would not. The two counters move
+independently:
+
+- **Dexie/IndexedDB database version: 2 → 3** (new `campaigns` store; `campaignId` indexes added to
+  `fieldSessions` and `assets`).
+- **FieldOS logical schema version: 4 → 5** (canonical/exported shape gains campaign links).
+
+The Dexie v3 upgrade re-declares all prior stores, so every existing row is preserved; the
+`campaigns` store starts empty (no campaign fabricated for existing sessions), and there is no
+`.upgrade()` step. Legacy rows missing `campaignId`/`sourceRef` normalize to `null` at the
+repository/import boundary without being rewritten (and `null`/absent keys are simply not indexed).
+Canonical JSON carries `session.campaignId` and an additive top-level **`campaignContext`**
+(`{ campaignId, title, sourceFieldpackId, sourceFieldpackVersion }` or `null`) so a campaign-bound
+session stays interpretable off-device without dumping the whole campaign; parsing an older export
+that lacks these normalizes them to `null` (never a fabricated Campaign). CSV/GeoJSON additionally
+carry `campaignId` as small, lossless, additive metadata. **Restore** retains `campaignId`/context as
+historical reference and **never fabricates a Campaign** — a campaign-bound session restores
+self-contained even when its Campaign is absent (it behaves as an orphaned/standalone historical
+session; a referenced campaign asset travels in the bundle so its `assetId` still resolves).
 
 CSV/GeoJSON are lossy for media (media is not embedded). That is why a separate backup exists.
 

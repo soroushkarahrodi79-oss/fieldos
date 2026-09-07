@@ -83,6 +83,15 @@ saved data must never silently disappear.**
 - Historical P0 geospatial context was list-first: GPS capture, known asset coordinates, distance
   to nearby assets, selection from nearby/recent assets. A later P1-1 read-only spatial map is
   implemented with an online-only basemap; it does not make offline maps part of scope.
+- **Campaign + FieldPack v1 (deliberate addition).** A researcher can prepare a bounded mission
+  before going outside and operate it fully offline: import a versioned, SHA-256 integrity-checked
+  `.fieldpack` (one field protocol + preloaded **point** assets) or create a local **Campaign**, then
+  run one or more protocol-bound field sessions grouped under it. Import is preflight-first and
+  atomic; a Campaign binds exactly one immutable protocol snapshot; campaign assets are resolved by
+  reference into sessions, not duplicated. This is preparation material, **not** live remote
+  configuration. Explicitly still out (see §6): FieldPack/protocol authoring UI, campaign
+  updates/merge/auto-upgrade, non-point assets, offline map tiles in packs, remote registries,
+  coverage intelligence, and analytics.
 - **Data export** (`observations.json` + `.csv` + `.geojson`) **and a separate full-session ZIP
   backup** (manifest + the three files + media), both generated on-device.
 - Storage-durability safeguards (request persistent storage; report storage health; explicit

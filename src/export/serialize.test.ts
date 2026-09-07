@@ -50,7 +50,7 @@ describe('canonical JSON', () => {
 
   it('carries schema + app version and media metadata (no blobs)', async () => {
     const { bundle } = await seededBundle();
-    expect(bundle.fieldosSchemaVersion).toBe(4);
+    expect(bundle.fieldosSchemaVersion).toBe(5);
     expect(bundle.media).toHaveLength(3);
     // Media metadata must not contain a blob.
     expect(bundle.media[0]).not.toHaveProperty('blob');

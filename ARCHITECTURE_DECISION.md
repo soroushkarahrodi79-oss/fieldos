@@ -150,7 +150,12 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
    unchanged so existing rows are preserved, and manufactures no historical entries. Schema 4
    (Protocol Engine v1) adds the additive nullable `FieldSession.protocolSnapshot` object field and,
    like schema 2, takes **no Dexie migration** (DB stays at **version 2**); a stored session missing
-   the field normalizes to `null` on read without rewriting the row.
+   the field normalizes to `null` on read without rewriting the row. Schema 5 (Campaign + FieldPack
+   v1) adds a new `FieldCampaign` entity plus additive nullable `FieldSession.campaignId` and
+   `Asset.campaignId`/`Asset.sourceRef`; the new `campaigns` store **and** the new `campaignId`
+   indexes take a real Dexie upgrade (**DB version 2 → 3**, logical schema **4 → 5**). The upgrade
+   re-declares all prior stores unchanged (existing rows preserved), starts `campaigns` empty (no
+   fabricated campaign), and legacy rows normalize campaign fields to `null` on read.
 5. **Append-only revision history, transactionally atomic (P1-5).** Beyond `editCount`, each
    observation has a durable `observationAudit` log answering *what changed, when, and the previous
    state*. It is append-only **at the application layer** (no public update/delete) — deliberately
@@ -237,6 +242,47 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
   label resolution, session binding/immutability, and export/restore round-tripping are unit-tested,
   including with a **synthetic second protocol** (categories/values absent from Tourism Core) to
   prove nothing assumes tourism category names.
+
+## Campaign + FieldPack (v1) — offline mission context + preloaded assets
+
+- **Problem it solves.** Protocol Engine made *methodology* portable, but a researcher still had to
+  build each session by hand in the field. Campaign + FieldPack lets them **prepare a bounded mission
+  before going outside** — one protocol plus planned point assets — import it once, and then operate
+  **fully offline**. The layering is FieldPack → Campaign → Protocol → Assets → Sessions →
+  Observations.
+- **Deliberately narrow.** This gate is *not* project management, cloud sync, a protocol/FieldPack
+  editor, analytics, or coverage intelligence. A Campaign is a small organisational entity with a
+  stable UUID that binds **exactly one** immutable protocol snapshot and groups sessions + preloaded
+  assets. No workflow status, no observer/auth semantics, no mutable protocol replacement.
+- **FieldPack = untrusted input, verified in memory.** A `.fieldpack` is a ZIP
+  (`manifest.json` + `protocol.json` + `assets.geojson`). Import reuses the Restore philosophy:
+  **preflight-first** (parse ZIP safely → validate manifest → verify **required** SHA-256 payload
+  integrity → validate the protocol with the *existing* Protocol Engine validator → validate the
+  GeoJSON → check collision → preview → confirm), with **no writes before confirmation** and only the
+  three known paths consumed (unsafe/`..`/absolute paths and oversized archives rejected). Integrity
+  is a corruption/change check only — never a signature, trusted publisher, or authenticated
+  methodology. The `fflate` and Web Crypto dependencies are already in the stack (backup/restore); no
+  new runtime dependency is added.
+- **Atomic install, conservative collisions.** A confirmed import writes the Campaign and all its
+  assets in **one Dexie transaction** over `campaigns` + `assets`, or nothing. A duplicate
+  `fieldpackId+version` is blocked; a same-id different-version import is blocked as an unsupported
+  upgrade (no silent reinstall, merge, overwrite, or auto-update).
+- **Assets by reference, identities kept separate.** Preloaded assets carry `campaignId` +
+  `sourceRef` with `sessionId: null`; a session resolves the **union** of its own assets and its
+  campaign's planned assets without cloning them per session. FieldOS UUIDs and external mission
+  `sourceRef`s serve different purposes and are both preserved. **Point** assets only (this closes
+  the deferred "preloaded GeoJSON assets" capability); polygons remain deferred.
+- **Sessions stay self-describing.** A campaign session inherits a *copy* of the campaign protocol
+  snapshot, so observation semantics never depend on resolving the Campaign at runtime. Export adds a
+  lightweight `campaignContext`; **restore never fabricates a Campaign** — a campaign-bound session
+  restores self-contained even when its Campaign is absent (a referenced campaign asset travels in
+  the bundle so its `assetId` still resolves).
+- **Authoring boundary.** No user-facing FieldPack builder/editor in this gate — a deterministic pure
+  `buildFieldPack(...)` exists only as internal test/development infrastructure.
+- **Testing boundary.** Campaign domain + DB migration, FieldPack manifest/protocol/GeoJSON/integrity
+  validation, preflight-first/atomic/collision import, session asset resolution, and
+  export/restore campaign-context round-tripping are unit-tested; live file-picker import is covered
+  by production-preview browser QA.
 
 ## Testing requirements (architectural, not aspirational)
 

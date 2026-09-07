@@ -21,13 +21,47 @@ The brief proposed: Field Sessions · Map/Assets · New Observation · Observati
 to P1 and made surface 2 **list-first**. P1-1 later added a read-only MapLibre map with an
 online-only basemap; the list remains the durable primary workflow.
 
-1. **Field Sessions** (home)
-2. **Session** = Observation list + Assets, with an optional read-only Map view
-3. **New Observation** (capture)
-4. **Observation detail / edit**
-5. **Export**
+1. **Home** = **Campaigns** + **Standalone sessions** (Campaign + FieldPack v1)
+2. **Campaign** = mission context + start/resume a campaign session
+3. **Import FieldPack** = choose → preview → confirm
+4. **Session** = Observation list + Assets, with an optional read-only Map view
+5. **New Observation** (capture)
+6. **Observation detail / edit**
+7. **Export**
 
 Plus a persistent **Storage/durability banner** (not a screen) when data is at risk.
+
+## Home information architecture (Campaign + FieldPack v1)
+
+The home screen is deliberately **not** a dashboard. It has two lists:
+
+- **Campaigns** — one card per campaign showing title, protocol, session count, and planned-asset
+  count; a FieldPack campaign is tagged with its version. Card actions: **Open campaign**. Section
+  actions: **Import FieldPack** and **+ New campaign** (title + built-in protocol; no asset planner).
+- **Standalone sessions** — the existing session list for sessions not bound to any campaign, with
+  quick access preserved (**+ New session**, **Restore backup**).
+
+### Campaign screen
+
+- **Purpose:** understand the mission context and enter fieldwork.
+- **Shows:** title, description, protocol, planned assets (with a type breakdown), sessions, and the
+  FieldPack source/version when applicable.
+- **Primary action:** **Start field session** (a minimal title/observerName/purpose form — the
+  protocol is already fixed by the campaign and is never re-selected). If an active campaign session
+  exists, **Resume** it.
+- **Offline:** fully offline; campaign, protocol, and assets are all local after import.
+
+### Import FieldPack screen
+
+- **Purpose:** bring a prepared mission onto the device safely.
+- **Flow:** choose a `.fieldpack` → in-memory validate + verify integrity + collision check →
+  **preview** (campaign title, FieldPack id/version, protocol name/version, planned-asset count +
+  type breakdown, integrity state, compatibility, and any collision) → **Confirm import** → atomic
+  install → open the new Campaign. **No writes happen before Confirm.**
+- **Failure/collision:** a duplicate or unsupported-upgrade FieldPack is shown clearly and the
+  Confirm action is disabled; invalid packs surface the specific validation reason.
+- **Integrity wording:** VERIFIED means only that payload bytes match the FieldPack's manifest — not
+  a signature, trusted publisher, or authenticated methodology.
 
 ---
 
