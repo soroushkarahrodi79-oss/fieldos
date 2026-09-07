@@ -8,7 +8,12 @@ Priority definitions:
 
 Every P0 below is traced to the core workflow. If it isn't necessary for that workflow, it isn't P0.
 
-## Implementation snapshot — 2026-09-01
+## Canonical implementation-status ledger — reconciled 2026-09-07
+
+Status terms are intentional: **implemented** means present in merged code; **validated** means
+only the evidence explicitly linked below; **pending** means a planned check or feature without
+that evidence; **deferred** means not implemented and not an accepted commitment beyond the
+existing contract. Code, merged history, and recorded evidence together determine status.
 
 - Implemented in code: P0-1 through P0-20, including the five-screen local workflow, honest GPS
   failure states, nearby asset selection, one-photo capture, non-destructive editing/location
@@ -28,7 +33,7 @@ Every P0 below is traced to the core workflow. If it isn't necessary for that wo
   Dexie transaction (DB version 1 → 2; logical schema 2 → 3). Raw capture immutability is preserved,
   no history is fabricated for legacy records, and canonical JSON / ZIP backup carry the full trail.
   It is append-only local history — **not** cryptographic tamper-proofing. See DATA_MODEL.md.
-- Delivered on 2026-08-31: **P1-6 Spatial Map MVP (P1-1 interactive map)**. A per-session MapLibre GL
+- Delivered on 2026-08-31: **P1-1 Spatial Map MVP**. A per-session MapLibre GL
   map view shows observations, assets, and a single current-position fix as tappable points, with a
   concise popup card and navigation to the existing observation detail. Observation placement uses the
   existing derived `effectiveLocation` policy (adjusted pin when a `locationAdjustment` exists, raw fix
@@ -42,13 +47,13 @@ Every P0 below is traced to the core workflow. If it isn't necessary for that wo
   closes the map MVP validation phase. Android validation is not claimed.
 - Corrected on 2026-09-01: New Observation offers separate native **Take photo** and **Choose photo**
   actions. Both stage the same single optional photo and use the existing local media persistence path.
-- Next engineering state: OPFS or AI work remain deferred and bounded by the product contract; offline
-  basemap (PMTiles) remains deferred.
-- Post-MVP P1/P2 scope remains deferred unless the product contract is deliberately changed.
+- The historical P0 decision was list-first, with no interactive map library. The later P1-1 map
+  does not revise that history or make offline maps implemented.
+- The remaining P1/P2 entries below are deferred unless the product contract is deliberately changed.
 
 ---
 
-## P0 — required before first field test
+## P0 — historical first-field-test scope (implemented; evidence is bounded)
 
 ### Foundation
 - **P0-1** Project scaffold: React + TS (strict) + Vite + vite-plugin-pwa; installable PWA that **launches offline**.
@@ -95,15 +100,15 @@ Every P0 below is traced to the core workflow. If it isn't necessary for that wo
 ### Safety net
 - **P0-20** Durability banner: nudge to **back up** when `persisted()` is false / session old & unbacked-up.
 - **P0-21** Real-device smoke test (physical iPhone + Android): offline launch, capture+GPS,
-  background/restart survival, quota-with-photos, export + full backup. **Gate for the field test.**
-  (Durability is validated here — not presumed to fail.)
+  background/restart survival, quota-with-photos, export + full backup. **Implemented checklist;
+  iPhone PASS is owner-attested; Android remains pending.** See `docs/DEVICE_TEST_RESULT.md`.
 
 ---
 
 ## P1 — useful after first field test
 
 - **P1-1** Interactive map view (MapLibre/Leaflet) to see observations as points; **online tiles first**,
-  cached/offline tiles only if justified. **Delivered 2026-08-31 as the P1-6 Spatial Map MVP.** MapLibre
+  cached/offline tiles only if justified. **Delivered 2026-08-31 as the P1-1 Spatial Map MVP.** MapLibre
   GL JS (open-source, no key) renders observations, assets, and a single current-position fix as tappable
   points over an **online-only** OSM raster basemap (attributed; MVP/testing, not production). Observation
   placement follows the derived `effectiveLocation` policy with explicit captured-vs-adjusted provenance
@@ -120,30 +125,30 @@ Every P0 below is traced to the core workflow. If it isn't necessary for that wo
   network dependency. Permission denial, storage pressure, exact 3-minute auto-stop,
   unsupported-browser handling, other checklist edge cases, and Android physical validation remain
   pending. See `docs/VOICE_NOTES_SMOKE_TEST.md` for the evidence boundary and remaining plan.
-- **P1-3** Import preloaded reference assets from GeoJSON (with `source: preloaded`).
-- **P1-4** Asset polygon geometry (beyond points).
+- **P1-3** Import preloaded reference assets from GeoJSON (with `source: preloaded`). **Deferred; not implemented.**
+- **P1-4** Asset polygon geometry (beyond points). **Deferred; not implemented.**
 - **P1-5** Full revision/audit log per observation (append-only), beyond editCount. **Delivered
   2026-08-31.** Transactional `observationAudit` store (Dexie DB v2, logical schema v3) recording
   `CREATED` / `INTERPRETATION_UPDATED` / `LOCATION_ADJUSTED` / `SOFT_DELETED` / `RESTORED` with
   before/after snapshots of mutable state (raw capture excluded and provably unchanged). No history
   fabricated for legacy records; full trail in canonical JSON + ZIP backup; read-only History surface
   on observation detail. Claim boundary: append-only local history, not cryptographic immutability.
-- **P1-6** Restore UI: re-import a full-session backup / canonical `observations.json` (the format is P0; the UI is P1).
-- **P1-7** Refine per-category value sets or add categories, if the first field test shows gaps.
-- **P1-8** Multiple photos per observation.
-- **P1-9** Coordinate-precision reduction option when sharing (privacy).
-- **P1-10** Quota dashboard (bytes used / remaining, per session).
-- **P1-11** Session-level and per-observation export; export selected records.
+- **P1-6** Restore UI: re-import a full-session backup / canonical `observations.json` (the format is P0; the UI is P1). **Deferred; not implemented.**
+- **P1-7** Refine per-category value sets or add categories, if field evidence shows gaps. **Deferred; not implemented.**
+- **P1-8** Multiple photos per observation. **Deferred; not implemented.**
+- **P1-9** Coordinate-precision reduction option when sharing (privacy). **Deferred; not implemented.**
+- **P1-10** Quota dashboard (bytes used / remaining, per session). **Deferred; not implemented.**
+- **P1-11** Session-level and per-observation export; export selected records. **Deferred; not implemented.**
 
 ## P2 — later
 
-- **P2-1** Optional cloud backup/sync (local-first still authoritative).
-- **P2-2** Multi-user / shared sessions, roles.
-- **P2-3** Any dashboard/analytics.
+- **P2-1** Optional cloud backup/sync (local-first still authoritative). **Deferred; not implemented.**
+- **P2-2** Multi-user / shared sessions, roles. **Deferred; not implemented.**
+- **P2-3** Any dashboard/analytics. **Deferred; not implemented.**
 - **P2-4** AI voice-to-structured-observation module — **only** as clearly machine-labelled,
-  never masquerading as OBSERVED/MEASURED/REPORTED field evidence.
-- **P2-5** SNTO / HATI or other research-system integration.
-- **P2-6** `DERIVED` evidence method (only once something actually derives data).
+  never masquerading as OBSERVED/MEASURED/REPORTED field evidence. **Deferred; not implemented.**
+- **P2-5** SNTO / HATI or other research-system integration. **Deferred; not implemented.**
+- **P2-6** `DERIVED` evidence method (only once something actually derives data). **Deferred; not implemented.**
 
 ---
 

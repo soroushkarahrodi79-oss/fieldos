@@ -1,5 +1,10 @@
 # FieldOS physical-device release gate
 
+> Historical checklist context: this acceptance plan predates the recorded first field run. The
+> repository holds an owner-attested iPhone result only; it does not retroactively establish an
+> Android pass or any unrecorded checklist result. See `DEVICE_TEST_RESULT.md` and
+> `FIRST_FIELD_RUN.md` for the evidence boundary.
+
 This checklist is the acceptance gate for P0-21. Run it on at least one physical iPhone and one
 physical Android phone before a real field campaign. Desktop emulation does not count.
 

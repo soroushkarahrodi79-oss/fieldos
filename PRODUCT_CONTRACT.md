@@ -54,7 +54,7 @@ Open app (offline OK)
       • pick a category (controlled list)
       • pick the category-specific value (no universal scale) and/or free text
       • set evidence method (default OBSERVED)
-      • optionally attach a photo / note (voice later)
+      • optionally attach a photo, text note, or raw voice note
   → Save — persisted locally, immediately, even with no signal
   → repeat rapidly
   → later: Export (json/csv/geojson) and/or Full session backup (ZIP with media)
@@ -72,10 +72,12 @@ saved data must never silently disappear.**
 - Evidence method per observation (OBSERVED / MEASURED / REPORTED — see DATA_MODEL.md §evidence).
 - Location provenance: raw device fix (`capturedLocation`) preserved immutably; manual adjustment
   is non-destructive (`locationAdjustment`); `effectiveLocation` is derived.
-- One photo per observation via native capture (`<input capture>`); notes as text.
+- One photo per observation via native camera or photo-library selection; text notes; later P1-2
+  extension: one optional raw offline voice note (not transcription or AI).
 - Fully offline persistence in IndexedDB; edit unsynced records without destroying original capture.
-- Geospatial context without a map: GPS capture, known asset coordinates, distance to nearby assets,
-  selection from nearby/recent assets.
+- Historical P0 geospatial context was list-first: GPS capture, known asset coordinates, distance
+  to nearby assets, selection from nearby/recent assets. A later P1-1 read-only spatial map is
+  implemented with an online-only basemap; it does not make offline maps part of scope.
 - **Data export** (`observations.json` + `.csv` + `.geojson`) **and a separate full-session ZIP
   backup** (manifest + the three files + media), both generated on-device.
 - Storage-durability safeguards (request persistent storage; report storage health; explicit
@@ -89,11 +91,12 @@ integration, creator/business features, gamification, social, role management, p
 arbitrary scoring, fabricated AI confidence scores.
 
 **Additionally moved out of MVP after review (challenges to the brief):**
-- **Interactive slippy basemap with tiles** → P1. Offline tile caching is a real trap on
-  iOS and adds large complexity for little field value; coordinate capture does not need a
-  basemap. MVP is **list-first**. (See UX_FLOW.md and the critical review.)
+- **Interactive slippy basemap with tiles** → P1. This was deliberately excluded from historical
+  P0 because offline tile caching is a real iOS complexity trap. P1-1 later delivered a read-only
+  MapLibre view with an online-only basemap; offline tiles/PMTiles remain out of scope.
 - **Voice-to-structured AI** → explicitly a *later module*, never MVP evidence.
-- **Full event-sourced audit log** → P1; MVP uses immutable-capture + lightweight edit tracking.
+- **Full event-sourced audit log** → P1; the delivered P1-5 extension is targeted append-only local
+  revision history, not full event sourcing or cryptographic tamper-proofing.
 - **`DERIVED` and `MISSING` evidence methods** → not exposed in P0; nothing derives data in v0
   and "missing" is the absence of a value, not an evidence type (see DATA_MODEL.md).
 - **Polygon asset geometry** → P1; MVP assets are points only.

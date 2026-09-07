@@ -123,7 +123,7 @@ fieldset { margin: 24px 0; padding: 0; border: 0; } legend { margin-bottom: 12px
 
 .session-title-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 
-/* --- Spatial map (P1-6) --- */
+/* --- Spatial map (P1-1) --- */
 .map-page { padding-bottom: 40px; }
 .map-heading { margin-bottom: 16px; }
 .map-heading h1 { font-size: clamp(1.8rem, 6vw, 2.6rem); }

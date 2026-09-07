@@ -1,4 +1,4 @@
-// Basemap strategy (P1-6) — ONLINE RASTER ONLY. No PMTiles, no tile caching, no offline basemap.
+// Basemap strategy (P1-1) — ONLINE RASTER ONLY. No PMTiles, no tile caching, no offline basemap.
 //
 // The style is an INLINE object (not a remote style URL), so map initialization never depends on
 // the network: MapLibre constructs the map from this literal even with no connectivity, and only
