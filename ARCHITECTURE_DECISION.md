@@ -22,8 +22,8 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
 
 ### TypeScript — **ADOPT (strong yes)**
 - *Problem it solves:* the whole product is about **provenance integrity**. Types make the
-  data model (evidence methods, immutable capture block, CapturedLocation, discriminated
-  ObservationValue, schemaVersion) enforceable
+  data model (evidence methods, immutable capture block, CapturedLocation, protocol-driven
+  ObservationValue semantics with runtime validation, schemaVersion) enforceable
   and refactor-safe. This is exactly where TS pays off.
 - *Platform alternative:* JSDoc types — weaker. Adopt real TS.
 
@@ -185,8 +185,10 @@ sync, infra) and is aligned with the thesis. Everything below is judged against 
   else no marker (no fabricated coordinate). The immutable capture block is only **read**, never
   mutated; the popup states honestly when a mapped position is *manually adjusted* and that the raw
   GPS is retained in provenance — it never implies the adjusted coordinate was the original fix.
-- **No schema / DB migration.** The map adds no store, no index, and no persisted coordinate; DB
-  stays at Dexie v2 and the logical schema at v3.
+- **No schema / DB migration.** The map itself introduced no schema or DB migration: it adds no
+  store, no index, and no persisted coordinate. At map delivery the logical schema was v3; the
+  current application remains at Dexie v2 while Protocol Engine later advanced the logical schema
+  to v4.
 - **Online basemap only, degrades gracefully.** The basemap is **OpenStreetMap standard raster tiles**
   (keyless, attributed `© OpenStreetMap contributors`) — suitable for MVP/testing, **not** high-volume
   production per the OSM tile usage policy. The MapLibre style is an **inline object, not a remote
