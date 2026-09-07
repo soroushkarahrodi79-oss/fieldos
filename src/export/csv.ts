@@ -42,9 +42,19 @@ const COLUMNS = [
   'updatedAt',
   'mediaCount',
   'mediaFilenames',
+  // Additive protocol provenance (Protocol Engine v1): identifies which protocol interpreted this
+  // session's category/value ids. Same for every row; empty for a legacy (no-snapshot) session.
+  // The full protocol definition is NOT flattened per row — it lives in canonical JSON / backup.
+  'protocolId',
+  'protocolVersion',
 ] as const;
 
-function rowFor(obs: Observation, media: MediaMetadata[]): (string | number | boolean | null)[] {
+function rowFor(
+  obs: Observation,
+  media: MediaMetadata[],
+  protocolId: string,
+  protocolVersion: number | null,
+): (string | number | boolean | null)[] {
   const eff = effectiveLocation(obs);
   const ev = obs.evidence;
   const mine = media.filter((m) => m.observationId === obs.id);
@@ -81,14 +91,19 @@ function rowFor(obs: Observation, media: MediaMetadata[]): (string | number | bo
     obs.updatedAt,
     mine.length,
     mine.map((m) => m.backupFilename).join(' '),
+    protocolId,
+    protocolVersion,
   ];
 }
 
 /** Flat, one-row-per-observation CSV for spreadsheets. Includes all observations (deleted flagged). */
 export function serializeObservationsCsv(bundle: SessionBundle): string {
+  const protocol = bundle.session.protocolSnapshot;
+  const protocolId = protocol?.protocolId ?? '';
+  const protocolVersion = protocol?.version ?? null;
   const header = COLUMNS.join(',');
   const lines = bundle.observations.map((obs) =>
-    rowFor(obs, bundle.media).map(csvCell).join(','),
+    rowFor(obs, bundle.media, protocolId, protocolVersion).map(csvCell).join(','),
   );
   return [header, ...lines].join('\r\n');
 }

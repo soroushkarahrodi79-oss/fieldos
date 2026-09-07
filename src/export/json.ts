@@ -16,6 +16,9 @@ export function parseSessionJson(text: string): SessionBundle {
   const bundle = JSON.parse(text) as SessionBundle;
   return {
     ...bundle,
+    // Pre-Protocol-Engine exports have no session protocol snapshot: normalize a missing field to
+    // explicit null (legacy session). No fabricated protocol is ever invented for those records.
+    session: { ...bundle.session, protocolSnapshot: bundle.session.protocolSnapshot ?? null },
     observations: bundle.observations.map((observation) => ({
       ...observation,
       capturedLocation: normalizeCapturedLocation(observation.capturedLocation),

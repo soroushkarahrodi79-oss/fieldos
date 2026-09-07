@@ -39,7 +39,10 @@ Plus a persistent **Storage/durability banner** (not a screen) when data is at r
 - **Info shown:** list of sessions (title, date, observation count, status active/closed),
   active session pinned on top.
 - **Navigation:** tap a session → Session screen. New session → quick create (title required,
-  observerName/purpose optional) → Session screen.
+  observerName/purpose optional) → Session screen. The create form shows the **protocol** bound to
+  the session (e.g. "Protocol · Tourism Field Observation Core · v1") with a one-line note that it
+  defines the session's categories/values and is fixed for the session's life. With a single built-in
+  protocol the flow stays one-tap; the form becomes a selector only if more protocols exist.
 - **Offline:** fully functional; sessions are local. No network needed to create or open.
 - **Empty state:** friendly "No sessions yet. Start your first field session." + big ＋ button;
   one line explaining data stays on this device until you export.
@@ -68,10 +71,13 @@ Plus a persistent **Storage/durability banner** (not a screen) when data is at r
   1. **Auto-captured, read-only chips at top:** ⏱ timestamp (now) · 📍 lat/lon + `±Xm` accuracy,
      acquired automatically on screen open. A subtle "↻ re-fix" and "adjust 📍" control.
   2. **Category** — a grid of large tap targets (single-select). This is the one required choice.
-  3. **Value** — a single row of the **category-specific** controlled values that appears *after* a
-     category is picked (e.g. path_condition → GOOD · FAIR · POOR · BLOCKED; parking_pressure →
-     LOW · MODERATE · HIGH · FULL). There is **no universal scale**. `other` shows no value row and
-     expects a note.
+     The categories, their labels, and an optional short description come from the **session's
+     protocol** (not a hard-coded list), so a session bound to a different protocol shows that
+     protocol's categories.
+  3. **Value** — a single row of the **category-specific** controlled values (from the protocol) that
+     appears *after* a category is picked (e.g. Tourism Core path_condition → GOOD · FAIR · POOR ·
+     BLOCKED; parking_pressure → LOW · MODERATE · HIGH · FULL). There is **no universal scale**. A
+     valueless category (e.g. `other`) shows no value row; a protocol category may also require a note.
   4. **Evidence** — default **OBSERVED**; a compact toggle to MEASURED (reveals value+unit+context)
      or REPORTED (reveals optional source note).
   5. **Note** — optional free text (voice-to-text is the OS keyboard's job; FieldOS does not
@@ -103,7 +109,10 @@ Plus a persistent **Storage/durability banner** (not a screen) when data is at r
 - **Purpose:** review one record, correct interpretation, adjust location non-destructively, add media.
 - **Primary action:** context-dependent — **Edit** interpretation, or **Done**.
 - **Info shown:** all fields; **raw captured location and time shown as immutable**; if edited,
-  show "edited ✎ ×N, last {updatedAt}". Photo(s) shown full-width.
+  show "edited ✎ ×N, last {updatedAt}". Photo(s) shown full-width. Category/value labels (and the
+  edit form's category/value choices and the revision-history diff) resolve through the session's
+  protocol; a legacy (no-snapshot) session is labelled honestly as using the legacy FieldOS
+  vocabulary rather than a bound protocol.
 - **Navigation:** back to list; menu → soft-delete (with confirm + undo), export just this record (P1).
 - **Offline:** full edit offline. Editing interpretation fields bumps `editCount`; capture block stays frozen.
 - **Empty state:** n/a.
@@ -131,6 +140,22 @@ Two clearly separated outputs (see DATA_MODEL.md §Export vs Backup):
 - **Failure state:** if generation fails (memory/quota with large media) → tell the user which part
   failed, and offer **data export without media** as a fallback so the structured data still gets out;
   never report success on a failed write.
+
+---
+
+## 6. Restore backup
+
+- **Entry:** a secondary **Restore backup** action on Field Sessions, subordinate to New session.
+- **Flow:** choose a FieldOS ZIP or canonical `observations.json` → inspect and validate → preview
+  counts, schema/app version, full/data-only status, integrity status, warnings, and collisions →
+  explicitly confirm → one atomic local write → open the reconstructed session.
+- **Safety:** no write follows file selection. Existing IDs block restore; FieldOS never overwrites,
+  merges, regenerates, or remaps imported evidence identities.
+- **Media:** full ZIP restores metadata and original blob bytes. JSON-only restore says how many
+  attachments are unavailable and never fabricates attachment rows/blobs.
+- **Integrity wording:** `VERIFIED` means SHA-256 payload bytes matched the archive manifest only.
+  Pre-integrity archives can be restored as `LEGACY_UNVERIFIED`; neither state means signed,
+  authenticated, tamper-proof, or legal chain-of-custody evidence.
 
 ---
 

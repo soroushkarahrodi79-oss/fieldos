@@ -18,7 +18,11 @@ export interface GeoJsonFeatureCollection {
   features: GeoJsonFeature[];
 }
 
-function featureFor(obs: Observation): GeoJsonFeature {
+function featureFor(
+  obs: Observation,
+  protocolId: string | null,
+  protocolVersion: number | null,
+): GeoJsonFeature {
   const eff = effectiveLocation(obs);
   const ev = obs.evidence;
 
@@ -28,6 +32,9 @@ function featureFor(obs: Observation): GeoJsonFeature {
     assetId: obs.assetId,
     category: obs.observation.category,
     value: obs.observation.value,
+    // Additive protocol provenance (Protocol Engine v1); null for a legacy no-snapshot session.
+    protocolId,
+    protocolVersion,
     evidenceMethod: ev.method,
     measurementValue: ev.method === 'MEASURED' ? ev.value : null,
     measurementUnit: ev.method === 'MEASURED' ? ev.unit : null,
@@ -58,12 +65,15 @@ function featureFor(obs: Observation): GeoJsonFeature {
 
 /** GeoJSON FeatureCollection — geometry uses effectiveLocation ([lon, lat] per spec). */
 export function serializeObservationsGeoJson(bundle: SessionBundle): string {
+  const protocol = bundle.session.protocolSnapshot;
+  const protocolId = protocol?.protocolId ?? null;
+  const protocolVersion = protocol?.version ?? null;
   const collection: GeoJsonFeatureCollection = {
     type: 'FeatureCollection',
     fieldosSchemaVersion: bundle.fieldosSchemaVersion,
     exportedAt: bundle.exportedAt,
     sessionId: bundle.session.id,
-    features: bundle.observations.map(featureFor),
+    features: bundle.observations.map((obs) => featureFor(obs, protocolId, protocolVersion)),
   };
   return JSON.stringify(collection, null, 2);
 }

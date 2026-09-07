@@ -12,7 +12,6 @@ import type {
   EvidenceMethod,
   IsoTimestamp,
   LocationStatus,
-  ObservationCategory,
   Uuid,
 } from '../domain/types';
 
@@ -31,7 +30,8 @@ export interface ObservationMapFeature {
    * coordinate was the original fix.
    */
   placement: ObservationPlacement;
-  category: ObservationCategory;
+  /** Protocol category id; resolved to a label via the session protocol at render time. */
+  category: string;
   value: string | null;
   evidenceMethod: EvidenceMethod;
   capturedAt: IsoTimestamp;

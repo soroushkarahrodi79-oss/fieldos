@@ -17,6 +17,16 @@ export interface BackupManifest {
   /** Total append-only revision-history entries across the session's observations. */
   auditEntryCount: number;
   appVersion: string;
+  /**
+   * Hashes of the exact payload bytes in this archive. This detects accidental corruption or a
+   * changed payload relative to this manifest; it is not a signature or authenticated provenance.
+   */
+  integrity?: BackupIntegrity;
+}
+
+export interface BackupIntegrity {
+  algorithm: 'SHA-256';
+  files: Record<string, string>;
 }
 
 export interface DataExportFile {
@@ -49,7 +59,7 @@ export function buildDataExportFiles(bundle: SessionBundle): DataExportFile[] {
   ];
 }
 
-function manifestFor(bundle: SessionBundle): BackupManifest {
+function manifestFor(bundle: SessionBundle, integrity?: BackupIntegrity): BackupManifest {
   return {
     fieldosSchemaVersion: bundle.fieldosSchemaVersion,
     exportedAt: bundle.exportedAt,
@@ -58,7 +68,18 @@ function manifestFor(bundle: SessionBundle): BackupManifest {
     mediaCount: bundle.media.length,
     auditEntryCount: bundle.auditEntries.length,
     appVersion: bundle.appVersion,
+    ...(integrity ? { integrity } : {}),
   };
+}
+
+/** Hex SHA-256 over the precise bytes that are stored in a ZIP entry. */
+export async function sha256Hex(bytes: Uint8Array): Promise<string> {
+  // Copy into a plain ArrayBuffer: TypeScript correctly distinguishes a possible
+  // SharedArrayBuffer-backed view from Web Crypto's accepted BufferSource.
+  const payload = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(payload).set(bytes);
+  const digest = await crypto.subtle.digest('SHA-256', payload);
+  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join('');
 }
 
 export interface SessionBackup {
@@ -77,22 +98,30 @@ export async function buildSessionBackup(
   sessionId: Uuid,
 ): Promise<SessionBackup> {
   const { bundle, mediaBlobs } = await buildSessionBundle(repos, sessionId);
-  const manifest = manifestFor(bundle);
   const encoder = new TextEncoder();
-
-  const entries: Zippable = {
-    'manifest.json': encoder.encode(JSON.stringify(manifest, null, 2)),
-  };
+  const payloads: Record<string, Uint8Array> = {};
   for (const file of buildDataExportFiles(bundle)) {
-    entries[file.filename] = encoder.encode(file.content);
+    payloads[file.filename] = encoder.encode(file.content);
   }
   // Binary media under media/{observationId}_{mediaId}.{ext}, matching the metadata paths.
   for (const media of mediaBlobs) {
     const meta = bundle.media.find((m) => m.id === media.id);
     if (!meta) continue;
     const bytes = new Uint8Array(await media.blob.arrayBuffer());
-    entries[meta.backupFilename] = bytes;
+    payloads[meta.backupFilename] = bytes;
   }
+
+  const integrity: BackupIntegrity = {
+    algorithm: 'SHA-256',
+    files: Object.fromEntries(
+      await Promise.all(Object.entries(payloads).map(async ([name, bytes]) => [name, await sha256Hex(bytes)])),
+    ),
+  };
+  const manifest = manifestFor(bundle, integrity);
+  const entries: Zippable = {
+    'manifest.json': encoder.encode(JSON.stringify(manifest, null, 2)),
+    ...payloads,
+  };
 
   const zipBytes = zipSync(entries);
   const stamp = bundle.exportedAt.replace(/[:.]/g, '-');

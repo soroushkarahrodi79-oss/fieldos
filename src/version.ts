@@ -11,7 +11,16 @@ export const APP_VERSION = '0.1.0';
  *
  * This is DISTINCT from the Dexie/IndexedDB database version (see `src/db/db.ts`):
  *   - Dexie DB version 2  ← physical stores/indexes (P1-5 added the `observationAudit` store)
- *   - FieldOS schema version 3  ← logical/canonical shape (P1-5 added the audit-entry collection)
+ *   - FieldOS schema version 4  ← logical/canonical shape
  * The two are bumped independently and must not be conflated.
+ *
+ * History of the logical schema version:
+ *   - 1  initial model
+ *   - 2  additive nullable GNSS fields inside CapturedLocation (no Dexie migration)
+ *   - 3  P1-5 append-only `observationAudit` entry collection (Dexie DB 1 → 2)
+ *   - 4  Protocol Engine v1: FieldSession gains an immutable `protocolSnapshot`. This is an
+ *        additive nullable object field on an existing store, so it needs NO Dexie migration
+ *        (DB stays at version 2); legacy rows missing it normalize to `null` at the read boundary
+ *        without being rewritten.
  */
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;

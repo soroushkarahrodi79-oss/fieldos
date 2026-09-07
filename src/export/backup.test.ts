@@ -33,7 +33,7 @@ describe('full-session ZIP backup', () => {
     expect(manifest.sessionId).toBe(fixture.sessionId);
     expect(manifest.observationCount).toBe(10);
     expect(manifest.mediaCount).toBe(3);
-    expect(manifest.fieldosSchemaVersion).toBe(3);
+    expect(manifest.fieldosSchemaVersion).toBe(4);
     expect(manifest.appVersion).toBe('0.1.0');
     expect(typeof manifest.exportedAt).toBe('string');
     // The in-memory manifest matches the archived one.

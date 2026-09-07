@@ -36,7 +36,7 @@ Legend: **R** = required, **O** = optional. Types are logical (stored as JSON in
 | Field | Type | R/O | Allowed / notes | Provenance meaning |
 |------|------|-----|-----------------|--------------------|
 | `id` | UUIDv4 string | R | `crypto.randomUUID()` | stable identity across export/backup |
-| `schemaVersion` | int | R | current `3`; legacy `1`/`2` remain readable | lets exports be interpreted later |
+| `schemaVersion` | int | R | current `4`; legacy `1`/`2`/`3` remain readable | lets exports be interpreted later |
 | `title` | string | R | free text, e.g. "Lakeside trail, Aug morning" | human label |
 | `purpose` | string | O | free text | context for later readers |
 | `observerName` | string | O | free text; **self-declared, unverified** | closest we get to "who"; P0 has no auth |
@@ -45,6 +45,13 @@ Legend: **R** = required, **O** = optional. Types are logical (stored as JSON in
 | `closedAt` | ISO-8601 | O | | when marked complete |
 | `updatedAt` | ISO-8601 | R | | last mutation |
 | `deviceLabel` | string | O | UA/platform snapshot at creation | helps explain data quirks later |
+| `protocolSnapshot` | `FieldProtocol` \| null | R (nullable) | immutable protocol bound at creation; `null` for a legacy pre-Protocol-Engine session | makes the session self-describing (see §Field Protocol) |
+
+> **`protocolSnapshot` is write-once and immutable** — there is no "change protocol" for an existing
+> session, since that would make its observations semantically ambiguous. A legacy session created
+> before Protocol Engine v1 has `protocolSnapshot: null`; that absence is preserved (normalized to
+> `null` on read, never rewritten), and the app renders/validates it against the legacy FieldOS
+> vocabulary (Tourism Core v1) without fabricating a snapshot.
 
 > `observerName` is a self-declared string. Nothing in the model or export may imply an
 > authenticated observer identity — P0 has no authentication.
@@ -56,7 +63,7 @@ Legend: **R** = required, **O** = optional. Types are logical (stored as JSON in
 | Field | Type | R/O | Allowed / notes | Provenance meaning |
 |------|------|-----|-----------------|--------------------|
 | `id` | UUIDv4 string | R | | identity |
-| `schemaVersion` | int | R | current `3`; legacy `1`/`2` remain readable | |
+| `schemaVersion` | int | R | current `4`; legacy `1`/`2`/`3` remain readable | |
 | `sessionId` | UUIDv4 | O | may be reusable across sessions | link |
 | `name` | string | R | free text | label |
 | `assetType` | enum | O | `trailhead` \| `car_park` \| `viewpoint` \| `visitor_centre` \| `path_segment` \| `public_space` \| `other` | coarse classification |
@@ -117,7 +124,7 @@ If `locationStatus !== CAPTURED`, coordinates are `null` — we **never fabricat
 | Field | Type | R/O | Allowed / notes |
 |------|------|-----|-----------------|
 | `id` | UUIDv4 string | R | |
-| `schemaVersion` | int | R | current `3`; legacy `1`/`2` remain readable |
+| `schemaVersion` | int | R | current `4`; legacy `1`/`2`/`3` remain readable |
 | `sessionId` | UUIDv4 | R | belongs to a session |
 | `assetId` | UUIDv4 \| null | O | null for ad-hoc points |
 | **— Capture block (IMMUTABLE) —** | | | |
@@ -135,26 +142,31 @@ If `locationStatus !== CAPTURED`, coordinates are `null` — we **never fabricat
 | `edited` | boolean | R | `editCount > 0`; surfaced in export |
 | `deleted` | boolean | R | soft-delete, default `false`; never hard-delete in the field |
 
-### ObservationValue — discriminated, category-specific (correction §2)
+### ObservationValue — protocol-driven, category-specific (correction §2; Protocol Engine v1)
 
 The universal ordinal `level` is **gone**. There is no shared scale, no numeric score, no
 composite index. Each category owns its own controlled values; values are **not** comparable
 across categories.
 
+**Historical (P0):** the vocabulary was a **closed, hard-coded TypeScript discriminated union**
+(one arm per tourism category) plus a `CATEGORY_VALUES` table. That was the correct MVP design but
+coupled observation semantics to application code.
+
+**Current (Protocol Engine v1):** the same vocabulary is **definition-driven**. The serialized shape
+is deliberately preserved — an observation value is a `{ category, value }` pair of machine ids —
+but the *set* of legal categories/values is defined by the session's protocol snapshot, not a
+compile-time union. Correctness is not weakened: it moves from the type system to **runtime
+validation** against the protocol (`src/protocol/validation.ts`, enforced at every write).
+
 ```ts
-type ObservationValue =
-  | { category: 'visitor_pressure';         value: 'NONE' | 'LOW' | 'MODERATE' | 'HIGH' }
-  | { category: 'parking_pressure';         value: 'LOW' | 'MODERATE' | 'HIGH' | 'FULL' }
-  | { category: 'path_condition';           value: 'GOOD' | 'FAIR' | 'POOR' | 'BLOCKED' }
-  | { category: 'litter';                   value: 'NONE' | 'LOW' | 'MODERATE' | 'HIGH' }
-  | { category: 'infrastructure_condition'; value: 'GOOD' | 'FAIR' | 'POOR' | 'DAMAGED' }
-  | { category: 'signage_condition';        value: 'GOOD' | 'DAMAGED' | 'MISSING' | 'UNCLEAR' }
-  | { category: 'accessibility_barrier';    value: 'NONE' | 'MINOR' | 'MAJOR' | 'UNKNOWN' }
-  | { category: 'visitor_management';       value: 'PRESENT' | 'ABSENT' | 'NOT_ASSESSED' }
-  | { category: 'other';                    value: null }; // note carries the content
+interface ObservationValue {
+  category: string;        // a category id defined by the session's protocol
+  value: string | null;    // a value id of that category, or null for a free/`other`-style category
+}
 ```
 
-**Category definitions (so semantics are clean and non-overlapping):**
+**Built-in Tourism Core category definitions** (the default protocol — semantics unchanged from P0,
+so all category scopes below still hold):
 
 | Category | Scope (what it is about) | Values & meaning |
 |----------|--------------------------|------------------|
@@ -208,7 +220,7 @@ type Evidence =
 | Field | Type | R/O | Allowed / notes |
 |------|------|-----|-----------------|
 | `id` | UUIDv4 string | R | |
-| `schemaVersion` | int | R | current `3`; legacy `1`/`2` remain readable |
+| `schemaVersion` | int | R | current `4`; legacy `1`/`2`/`3` remain readable |
 | `observationId` | UUIDv4 | R | owner |
 | `kind` | enum | R | `photo` \| `audio` (P1-2 delivered; raw audio only, no transcription) |
 | `blob` | Blob | R | stored in IndexedDB (raw evidence, not re-encoded) |
@@ -239,7 +251,7 @@ the store directly; the guarantee is only that FieldOS's own APIs never rewrite 
 | Field | Type | R/O | Allowed / notes |
 |------|------|-----|-----------------|
 | `id` | UUIDv4 string | R | |
-| `schemaVersion` | int | R | current `3` |
+| `schemaVersion` | int | R | current `4` |
 | `observationId` | UUIDv4 | R | owner observation |
 | `sessionId` | UUIDv4 | R | denormalized for efficient session-level export |
 | `sequence` | int | R | **1-based, strictly increasing per observation**; no gaps, no duplicates (see *Uniqueness* below) |
@@ -285,6 +297,46 @@ begins at `sequence: 1` with the first *real* mutation after audit logging exist
 no-op that writes nothing — no misleading duplicate event.
 
 ---
+
+## Value object: FieldProtocol  *(Protocol Engine v1 — embedded, immutable snapshot)*
+
+A **Field Protocol** defines the structure and semantics of an observation methodology: *what kinds
+of observations may be recorded, and what the controlled values mean for each kind.* It is embedded
+as an immutable snapshot inside `FieldSession.protocolSnapshot` so a session stays self-describing
+years later even if protocol definitions evolve. Definitions are **pure JSON** (no executable code),
+runtime-validatable, and carry stable, language-independent machine ids separate from display labels.
+
+```ts
+interface FieldProtocol {
+  protocolId: string;      // stable machine id, e.g. 'fieldos-tourism-core'
+  version: number;         // methodology version (positive integer)
+  schemaVersion: number;   // Protocol Engine structural version (current 1)
+  name: string;
+  description: string | null;
+  categories: ProtocolCategory[];   // non-empty; unique category ids
+}
+interface ProtocolCategory {
+  id: string;              // unique within the protocol
+  label: string;
+  description: string | null;
+  values: ProtocolValue[];         // unique value ids; EMPTY = free/`other`-style (value must be null)
+  notePolicy: 'optional' | 'required';
+}
+interface ProtocolValue { id: string; label: string; description: string | null; }
+```
+
+**Rules:**
+- **Protocols define WHAT is assessed; evidence defines HOW it was obtained.** Evidence method
+  (OBSERVED/MEASURED/REPORTED) stays FieldOS-owned and is **never** part of a protocol.
+- An observation is valid only if its `category` exists in the session protocol, its `value` belongs
+  to that category (or is `null` for a valueless category), and the category's `notePolicy` is
+  satisfied. This is enforced at every write (create + interpretation edit), not just in the UI.
+- The snapshot is **immutable after session creation** — no "change protocol" action exists.
+- **Not a generic form builder:** no arbitrary field types, questions, branching, calculations,
+  scoring, or layout. v1 has no user authoring/import/registry (a future FieldPack gate owns that).
+- The built-in **Tourism Field Observation Core** (`fieldos-tourism-core` v1) is the default and
+  encodes the exact P0 vocabulary above. It also serves as the **legacy vocabulary** for rendering
+  and validating sessions whose `protocolSnapshot` is `null`.
 
 ## Cross-cutting provenance guarantees
 
@@ -346,6 +398,21 @@ preserved (Dexie deletes only omitted stores); the new store simply starts empty
 older export that lacks it normalizes the field to `[]` (never inventing events). Existing schema-1
 and schema-2 records remain readable and are not rewritten merely because the app opens.
 
+### Schema 4 compatibility decision (Protocol Engine v1)
+
+Schema 4 adds one **additive, nullable object field** — `FieldSession.protocolSnapshot` — to an
+existing store. Like schema 2 (and unlike schema 3), it requires **no Dexie database-version
+migration**: no object store or index changes, and the snapshot is not indexed. The Dexie DB stays
+at **version 2**; only the logical FieldOS schema moves **3 → 4**. A stored session missing the field
+(created before the Protocol Engine) normalizes to `protocolSnapshot: null` at the repository/import
+boundary without being rewritten on read. Canonical JSON carries the snapshot inside `session`;
+parsing an older export that lacks it normalizes to `null` (never a fabricated protocol). CSV/GeoJSON
+additionally carry `protocolId` / `protocolVersion` as small, lossless, additive metadata (the full
+protocol definition is **not** flattened into every row — it lives in canonical JSON / the backup).
+Restore validates a present `protocolSnapshot`'s **structure** before any write and **blocks** on a
+malformed or newer-than-supported protocol rather than discarding it; a legacy backup with no
+snapshot remains a valid legacy backup.
+
 CSV/GeoJSON are lossy for media (media is not embedded). That is why a separate backup exists.
 
 ### FULL SESSION BACKUP (complete, restorable-in-principle)
@@ -364,9 +431,14 @@ media/{observationId}_{mediaId}.{ext}
 - `observationCount`
 - `mediaCount`
 - `appVersion` (if available)
+- `integrity` (new archives): SHA-256 hashes of every payload entry except `manifest.json` itself.
 
-`observations.json` is the **canonical representation** — a future FieldOS version must, in
-principle, be able to restore a session from it. (Restore UI may remain P1; the format is P0.)
+`observations.json` is the **canonical representation**. The Restore action first validates it and
+then reconstructs records atomically without generating new IDs, timestamps, or audit entries.
+JSON-only restore deliberately restores no media blobs; a ZIP is required for a complete media
+restore. SHA-256 integrity status is `VERIFIED` only when payload bytes match a present manifest;
+older otherwise-valid archives are `LEGACY_UNVERIFIED`. This is not signing, authentication, or
+tamper-proofing.
 ZIP packaging uses **`fflate`** (see ARCHITECTURE_DECISION.md — the platform has no built-in zip).
 
 Serialization invariants: UUIDs and timestamps are **preserved verbatim** through
