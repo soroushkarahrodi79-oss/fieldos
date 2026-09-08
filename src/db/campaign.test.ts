@@ -1,7 +1,13 @@
 import Dexie from 'dexie';
 import { describe, expect, it, vi } from 'vitest';
 import { FieldOsDb } from './db';
-import { Repositories, RestoreCollisionError } from './repositories';
+import {
+  CampaignFieldpackCollisionError,
+  CampaignNotFoundError,
+  CampaignProtocolMismatchError,
+  Repositories,
+  RestoreCollisionError,
+} from './repositories';
 import { makeTestRepos } from '../test/helpers';
 import { TOURISM_CORE_PROTOCOL } from '../protocol/tourismCore';
 import { TEST_HEAT_PROTOCOL } from '../fixtures/testProtocol';
@@ -81,6 +87,30 @@ describe('Campaign domain', () => {
     await expect(repos.installCampaign(campaign, [])).rejects.toBeInstanceOf(RestoreCollisionError);
   });
 
+  it('transactionally rejects a second install of the same fieldpackId + version (distinct ids)', async () => {
+    const { repos, db } = makeTestRepos();
+    await repos.installCampaign(fieldpackCampaign(), []);
+    // A brand-new campaign object (fresh UUID) from the SAME fieldpackId + version must still be
+    // blocked as a duplicate by the transactional guard — not by the id-collision check.
+    await expect(repos.installCampaign(fieldpackCampaign(), [])).rejects.toBeInstanceOf(
+      CampaignFieldpackCollisionError,
+    );
+    expect(await db.campaigns.count()).toBe(1);
+  });
+
+  it('transactionally rejects a same-id different-version install as an unsupported upgrade', async () => {
+    const { repos, db } = makeTestRepos();
+    await repos.installCampaign(fieldpackCampaign(), []);
+    const upgrade = fieldpackCampaign({
+      source: { type: 'fieldpack', fieldpackId: 'pack-coast', fieldpackVersion: 2 },
+    });
+    await expect(repos.installCampaign(upgrade, [])).rejects.toMatchObject({
+      name: 'CampaignFieldpackCollisionError',
+      kind: 'unsupported_upgrade',
+    });
+    expect(await db.campaigns.count()).toBe(1);
+  });
+
   it('finds campaigns by fieldpack id for the collision policy', async () => {
     const { repos } = makeTestRepos();
     await repos.installCampaign(fieldpackCampaign(), []);
@@ -102,6 +132,44 @@ describe('Session ↔ Campaign binding', () => {
     const standalone = await repos.createSession({ title: 'Solo' });
     expect(standalone.campaignId).toBeNull();
     expect((await repos.listCampaignSessions(campaign.id)).map((s) => s.id)).toEqual([bound.id]);
+  });
+
+  it('createCampaignSession always snapshots the campaign protocol (matching protocol accepted)', async () => {
+    const { repos } = makeTestRepos();
+    const campaign = await repos.createCampaign({ title: 'Heat mission', protocol: TEST_HEAT_PROTOCOL });
+    // No protocol supplied → inherits the campaign's snapshot.
+    const inherited = await repos.createCampaignSession(campaign.id, { title: 'Run A' });
+    expect(inherited.campaignId).toBe(campaign.id);
+    expect(inherited.protocolSnapshot).toEqual(campaign.protocolSnapshot);
+    // Explicitly passing the campaign's own protocol is accepted (it matches).
+    const matched = await repos.createCampaignSession(campaign.id, { title: 'Run B', protocol: campaign.protocolSnapshot });
+    expect(matched.protocolSnapshot?.protocolId).toBe('fieldos-test-heat');
+  });
+
+  it('refuses to persist a campaign-bound session carrying a DIFFERENT protocol (invariant)', async () => {
+    const { repos, db } = makeTestRepos();
+    // Campaign is bound to Tourism Core; caller tries to bind an unrelated protocol to its session.
+    const campaign = await repos.createCampaign({ title: 'Coast', protocol: TOURISM_CORE_PROTOCOL });
+
+    await expect(
+      repos.createCampaignSession(campaign.id, { title: 'Bad', protocol: TEST_HEAT_PROTOCOL }),
+    ).rejects.toBeInstanceOf(CampaignProtocolMismatchError);
+    // The public createSession path routes campaignId through the same guard — same rejection.
+    await expect(
+      repos.createSession({ title: 'Bad', campaignId: campaign.id, protocol: TEST_HEAT_PROTOCOL }),
+    ).rejects.toBeInstanceOf(CampaignProtocolMismatchError);
+
+    // Nothing was persisted: the campaign has no sessions and no session row leaked in.
+    expect(await repos.listCampaignSessions(campaign.id)).toHaveLength(0);
+    expect(await db.fieldSessions.count()).toBe(0);
+  });
+
+  it('rejects binding a session to a campaign that does not exist', async () => {
+    const { repos, db } = makeTestRepos();
+    await expect(
+      repos.createCampaignSession(crypto.randomUUID(), { title: 'Orphan' }),
+    ).rejects.toBeInstanceOf(CampaignNotFoundError);
+    expect(await db.fieldSessions.count()).toBe(0);
   });
 
   it('legacy sessions and assets normalize campaign fields to null without rewriting rows', async () => {

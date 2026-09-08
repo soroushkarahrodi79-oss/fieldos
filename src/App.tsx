@@ -212,9 +212,10 @@ function CampaignScreen({ campaignId, revision, go, changed, fail }: SharedProps
     event.preventDefault(); if (!campaign || !title.trim()) return; setStarting(true);
     try {
       await requestPersistence();
-      // The campaign already defines the protocol — the session inherits a copy of that snapshot and
-      // is bound to the campaign. The user never re-selects a protocol here.
-      const session = await repositories.createSession({ title: title.trim(), observerName: observerName.trim() || null, purpose: purpose.trim() || null, deviceLabel: navigator.userAgent, protocol: campaign.protocolSnapshot, campaignId });
+      // The campaign already defines the protocol — the dedicated path snapshots the campaign's own
+      // protocol into the session. The user never re-selects a protocol here, and a mismatched one
+      // could not be persisted even if a caller tried.
+      const session = await repositories.createCampaignSession(campaignId, { title: title.trim(), observerName: observerName.trim() || null, purpose: purpose.trim() || null, deviceLabel: navigator.userAgent });
       changed('Campaign session created locally.'); go({ name: 'session', sessionId: session.id });
     } catch (cause) { fail(cause); } finally { setStarting(false); }
   };

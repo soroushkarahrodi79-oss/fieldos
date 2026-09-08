@@ -6,7 +6,7 @@
 // inspection runs in memory. A FieldPack is treated as UNTRUSTED input.
 
 import { unzipSync, strFromU8 } from 'fflate';
-import type { Repositories } from '../db/repositories';
+import { CampaignFieldpackCollisionError, type Repositories } from '../db/repositories';
 import { newId } from '../domain/ids';
 import { nowIso } from '../domain/time';
 import { SCHEMA_VERSION } from '../version';
@@ -33,6 +33,58 @@ function unsafePath(name: string): boolean {
 }
 
 /**
+ * Enumerate EVERY entry filename in the ZIP central directory, INCLUDING duplicates. This is needed
+ * because fflate's `unzipSync` returns a name→bytes object that silently collapses duplicate entries
+ * (last one wins) — so a FieldPack carrying two `protocol.json` entries would look single and
+ * unambiguous to `unzipSync` while actually being ambiguous. We read the raw central directory so
+ * such duplicates can be detected and rejected before anything is trusted.
+ *
+ * Standard ZIP layout only (v1 FieldPacks are small JSON archives); a structure we cannot parse is
+ * treated as an unreadable FieldPack rather than being trusted.
+ */
+function centralDirectoryNames(bytes: Uint8Array): string[] {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const EOCD_SIG = 0x06054b50;
+  const CDH_SIG = 0x02014b50;
+  const EOCD_MIN = 22;
+  // The End Of Central Directory record sits at the end (it may be followed by a variable-length
+  // comment), so scan backwards for its signature.
+  let eocd = -1;
+  for (let i = bytes.length - EOCD_MIN; i >= 0; i--) {
+    if (view.getUint32(i, true) === EOCD_SIG) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new FieldPackValidationError('The selected file is not a readable FieldPack (.fieldpack) archive.');
+  const totalEntries = view.getUint16(eocd + 10, true);
+  let offset = view.getUint32(eocd + 16, true);
+  const names: string[] = [];
+  for (let n = 0; n < totalEntries; n++) {
+    if (offset + 46 > bytes.length || view.getUint32(offset, true) !== CDH_SIG) {
+      throw new FieldPackValidationError('The selected file is not a readable FieldPack (.fieldpack) archive.');
+    }
+    const nameLen = view.getUint16(offset + 28, true);
+    const extraLen = view.getUint16(offset + 30, true);
+    const commentLen = view.getUint16(offset + 32, true);
+    names.push(strFromU8(bytes.subarray(offset + 46, offset + 46 + nameLen)));
+    offset += 46 + nameLen + extraLen + commentLen;
+  }
+  return names;
+}
+
+/** Reject a ZIP that carries the same archive path more than once (ambiguous / overwriting). */
+function assertNoDuplicateEntries(bytes: Uint8Array): void {
+  const counts = new Map<string, number>();
+  for (const name of centralDirectoryNames(bytes)) {
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  const duplicates = [...counts.entries()].filter(([, count]) => count > 1).map(([name]) => name);
+  if (duplicates.length) {
+    throw new FieldPackValidationError(
+      `FieldPack contains duplicate archive entries (${duplicates.join(', ')}), which is ambiguous and not accepted.`,
+    );
+  }
+}
+
+/**
  * Inspect and fully validate a `.fieldpack` archive in memory. Verifies SHA-256 integrity, validates
  * the protocol with the existing Protocol Engine runtime validator (no second protocol schema), and
  * validates the GeoJSON assets. Throws `FieldPackValidationError` on any problem — no writes occur.
@@ -44,6 +96,11 @@ export async function inspectFieldPack(bytes: Uint8Array): Promise<FieldPackInsp
   } catch {
     throw new FieldPackValidationError('The selected file is not a readable FieldPack (.fieldpack) archive.');
   }
+
+  // Detect duplicate archive entries BEFORE trusting the collapsed name→bytes object above: fflate
+  // keeps only the last entry for a repeated name, so an ambiguous/overwriting pack must be rejected
+  // here rather than silently resolving to whichever copy happened to come last.
+  assertNoDuplicateEntries(bytes);
 
   const names = Object.keys(files);
   for (const name of names) {
@@ -152,6 +209,7 @@ export async function installFieldPackImport(
   repos: Repositories,
   inspection: FieldPackInspection,
 ): Promise<FieldPackImportResult> {
+  // First-line rejection from the point-in-time preview (fast, user-facing feedback).
   if (inspection.collision.kind === 'duplicate') {
     throw new FieldPackValidationError(
       'This FieldPack (same id and version) is already installed. Duplicate import is blocked.',
@@ -196,7 +254,18 @@ export async function installFieldPackImport(
     updatedAt: ts,
   }));
 
-  await repos.installCampaign(campaign, assets);
+  // The invariant is ultimately enforced INSIDE this atomic install (re-checked against current
+  // campaigns), so a stale/reused inspection whose `collision` still reads `none` is still rejected
+  // here. Translate that transactional rejection into the import surface's error type for uniform
+  // messaging.
+  try {
+    await repos.installCampaign(campaign, assets);
+  } catch (cause) {
+    if (cause instanceof CampaignFieldpackCollisionError) {
+      throw new FieldPackValidationError(cause.message);
+    }
+    throw cause;
+  }
   return {
     campaignId,
     title: campaign.title,
