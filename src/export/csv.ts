@@ -47,6 +47,9 @@ const COLUMNS = [
   // The full protocol definition is NOT flattened per row — it lives in canonical JSON / backup.
   'protocolId',
   'protocolVersion',
+  // Additive campaign provenance (Campaign + FieldPack v1): the organisational mission this session
+  // belonged to. Same for every row; empty for a standalone/legacy session.
+  'campaignId',
 ] as const;
 
 function rowFor(
@@ -54,6 +57,7 @@ function rowFor(
   media: MediaMetadata[],
   protocolId: string,
   protocolVersion: number | null,
+  campaignId: string,
 ): (string | number | boolean | null)[] {
   const eff = effectiveLocation(obs);
   const ev = obs.evidence;
@@ -93,6 +97,7 @@ function rowFor(
     mine.map((m) => m.backupFilename).join(' '),
     protocolId,
     protocolVersion,
+    campaignId,
   ];
 }
 
@@ -101,9 +106,10 @@ export function serializeObservationsCsv(bundle: SessionBundle): string {
   const protocol = bundle.session.protocolSnapshot;
   const protocolId = protocol?.protocolId ?? '';
   const protocolVersion = protocol?.version ?? null;
+  const campaignId = bundle.session.campaignId ?? '';
   const header = COLUMNS.join(',');
   const lines = bundle.observations.map((obs) =>
-    rowFor(obs, bundle.media, protocolId, protocolVersion).map(csvCell).join(','),
+    rowFor(obs, bundle.media, protocolId, protocolVersion, campaignId).map(csvCell).join(','),
   );
   return [header, ...lines].join('\r\n');
 }

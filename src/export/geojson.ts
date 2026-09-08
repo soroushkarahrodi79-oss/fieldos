@@ -22,6 +22,7 @@ function featureFor(
   obs: Observation,
   protocolId: string | null,
   protocolVersion: number | null,
+  campaignId: string | null,
 ): GeoJsonFeature {
   const eff = effectiveLocation(obs);
   const ev = obs.evidence;
@@ -35,6 +36,8 @@ function featureFor(
     // Additive protocol provenance (Protocol Engine v1); null for a legacy no-snapshot session.
     protocolId,
     protocolVersion,
+    // Additive campaign provenance (Campaign + FieldPack v1); null for a standalone session.
+    campaignId,
     evidenceMethod: ev.method,
     measurementValue: ev.method === 'MEASURED' ? ev.value : null,
     measurementUnit: ev.method === 'MEASURED' ? ev.unit : null,
@@ -68,12 +71,13 @@ export function serializeObservationsGeoJson(bundle: SessionBundle): string {
   const protocol = bundle.session.protocolSnapshot;
   const protocolId = protocol?.protocolId ?? null;
   const protocolVersion = protocol?.version ?? null;
+  const campaignId = bundle.session.campaignId ?? null;
   const collection: GeoJsonFeatureCollection = {
     type: 'FeatureCollection',
     fieldosSchemaVersion: bundle.fieldosSchemaVersion,
     exportedAt: bundle.exportedAt,
     sessionId: bundle.session.id,
-    features: bundle.observations.map((obs) => featureFor(obs, protocolId, protocolVersion)),
+    features: bundle.observations.map((obs) => featureFor(obs, protocolId, protocolVersion, campaignId)),
   };
   return JSON.stringify(collection, null, 2);
 }

@@ -1,6 +1,7 @@
 import Dexie, { type EntityTable } from 'dexie';
 import type {
   Asset,
+  FieldCampaign,
   FieldSession,
   MediaAttachment,
   Observation,
@@ -21,6 +22,7 @@ export class FieldOsDb extends Dexie {
   observations!: EntityTable<Observation, 'id'>;
   media!: EntityTable<MediaAttachment, 'id'>;
   observationAudit!: EntityTable<ObservationAuditEntry, 'id'>;
+  campaigns!: EntityTable<FieldCampaign, 'id'>;
 
   constructor(name = 'fieldos') {
     super(name);
@@ -52,6 +54,23 @@ export class FieldOsDb extends Dexie {
       // `occurredAt` supports chronological session-wide reads.
       observationAudit:
         'id, observationId, sessionId, &[observationId+sequence], occurredAt',
+    });
+    // Version 3 (Campaign + FieldPack v1): add the `campaigns` store and a `campaignId` index on
+    // `fieldSessions` and `assets`. Adding a new store AND adding an index to existing stores both
+    // require a real Dexie version bump. All prior stores are re-declared (Dexie deletes only stores
+    // OMITTED from a version), so every existing row is preserved. There is no `.upgrade()` step:
+    // legacy rows simply lack `campaignId`/`sourceRef` (normalized to `null` at the read boundary,
+    // never rewritten), and `null`/absent keys are not indexed by IndexedDB — standalone sessions
+    // and assets are found through the ordinary (non-campaign) listing paths. The `campaigns` store
+    // starts empty; no campaign is fabricated for existing sessions.
+    this.version(3).stores({
+      fieldSessions: 'id, status, createdAt, campaignId',
+      assets: 'id, sessionId, source, campaignId',
+      observations: 'id, sessionId, createdAt, capturedAt',
+      media: 'id, observationId',
+      observationAudit:
+        'id, observationId, sessionId, &[observationId+sequence], occurredAt',
+      campaigns: 'id, createdAt',
     });
   }
 }

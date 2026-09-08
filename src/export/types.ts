@@ -22,6 +22,19 @@ export interface MediaMetadata {
 }
 
 /**
+ * Lightweight Campaign context for an exported session (Campaign + FieldPack v1 §20). This is
+ * additive metadata so a campaign-bound session stays interpretable outside the device; it is NOT a
+ * full Campaign database dump. Standalone/legacy sessions export this as `null`. The session's own
+ * `protocolSnapshot` already preserves methodology — this only records mission provenance.
+ */
+export interface SessionCampaignContext {
+  campaignId: string;
+  title: string;
+  sourceFieldpackId: string | null;
+  sourceFieldpackVersion: number | null;
+}
+
+/**
  * Everything needed to represent one session. The canonical `observations.json`.
  * A future FieldOS version must, in principle, be able to restore from this.
  */
@@ -30,6 +43,11 @@ export interface SessionBundle {
   appVersion: string;
   exportedAt: string;
   session: FieldSession;
+  /**
+   * Session-scoped assets PLUS any campaign assets referenced by the session's observations, so the
+   * bundle is self-contained (an observation's `assetId` always resolves) without embedding the
+   * whole campaign. Campaign assets keep `sessionId: null` and their `campaignId`.
+   */
   assets: Asset[];
   observations: Observation[];
   /** Metadata only; blobs travel separately in the ZIP's media/ folder. */
@@ -41,6 +59,8 @@ export interface SessionBundle {
    * schema-1/2 exports; importers normalize a missing field to `[]` without inventing entries.
    */
   auditEntries: ObservationAuditEntry[];
+  /** Mission provenance for a campaign-bound session; `null` for standalone/legacy sessions. */
+  campaignContext: SessionCampaignContext | null;
 }
 
 /** Map a MIME type to a file extension for backup filenames. */

@@ -83,9 +83,24 @@ function validateBundle(raw: unknown): SessionBundle {
       throw new RestoreValidationError(`Session protocol snapshot is invalid: ${detail}`);
     }
   }
+  // Campaign link (Campaign + FieldPack v1). A campaign-bound session restores self-contained even
+  // when its Campaign is absent locally — the campaignId is retained as historical reference and no
+  // Campaign entity is ever fabricated from it (§21).
+  if (session.campaignId !== undefined && session.campaignId !== null && typeof session.campaignId !== 'string') {
+    throw new RestoreValidationError('Session campaignId must be a string or null.');
+  }
+  session.campaignId = session.campaignId ?? null;
   const assets = array(bundle.assets, 'Assets').map((item, index) => {
     const asset = object(item, `Asset ${index}`); nonEmptyString(asset.id, `Asset ${index} ID`);
-    if (asset.sessionId !== session.id) throw new RestoreValidationError(`Asset ${asset.id} does not belong to the imported session.`);
+    // An asset either belongs to this session (session-dropped) OR is a campaign asset referenced by
+    // the session's observations (sessionId null + a campaignId). Anything else does not belong.
+    const isSessionAsset = asset.sessionId === session.id;
+    const isCampaignAsset =
+      (asset.sessionId === null || asset.sessionId === undefined) &&
+      typeof asset.campaignId === 'string' && asset.campaignId.trim() !== '';
+    if (!isSessionAsset && !isCampaignAsset) {
+      throw new RestoreValidationError(`Asset ${asset.id} does not belong to the imported session or its campaign.`);
+    }
     nonEmptyString(asset.name, `Asset ${asset.id} name`); timestamp(asset.createdAt, `Asset ${asset.id} createdAt`); timestamp(asset.updatedAt, `Asset ${asset.id} updatedAt`);
     return asset;
   });
@@ -127,6 +142,22 @@ function validateBundle(raw: unknown): SessionBundle {
     seenSequences.add(key); timestamp(entry.occurredAt, `Audit entry ${id} occurredAt`); object(entry.after, `Audit entry ${id} after`);
     return entry;
   });
+  // Campaign context is additive mission provenance; validate its shape if present, normalize a
+  // missing/null value to null, and never fabricate a Campaign from it.
+  let campaignContext: SessionBundle['campaignContext'] = null;
+  if (bundle.campaignContext !== undefined && bundle.campaignContext !== null) {
+    const context = object(bundle.campaignContext, 'Campaign context');
+    const campaignId = nonEmptyString(context.campaignId, 'Campaign context campaignId');
+    const title = nonEmptyString(context.title, 'Campaign context title');
+    if (context.sourceFieldpackId !== null && typeof context.sourceFieldpackId !== 'string') throw new RestoreValidationError('Campaign context sourceFieldpackId must be a string or null.');
+    if (context.sourceFieldpackVersion !== null && !Number.isInteger(context.sourceFieldpackVersion)) throw new RestoreValidationError('Campaign context sourceFieldpackVersion must be an integer or null.');
+    campaignContext = {
+      campaignId,
+      title,
+      sourceFieldpackId: (context.sourceFieldpackId as string | null) ?? null,
+      sourceFieldpackVersion: (context.sourceFieldpackVersion as number | null) ?? null,
+    };
+  }
   const allIds = [session.id as string, ...assets.map((x) => x.id as string), ...observations.map((x) => x.id as string), ...media.map((x) => x.id as string), ...auditEntries.map((x) => x.id as string)];
   if (new Set(allIds).size !== allIds.length) throw new RestoreValidationError('Imported identities must be globally unique.');
   return {
@@ -138,6 +169,7 @@ function validateBundle(raw: unknown): SessionBundle {
     observations: observations as unknown as SessionBundle['observations'],
     media: media as unknown as MediaMetadata[],
     auditEntries: auditEntries as unknown as SessionBundle['auditEntries'],
+    campaignContext,
   };
 }
 

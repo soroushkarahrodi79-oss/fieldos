@@ -5,7 +5,7 @@ import { nearbyAssets } from './domain/geo';
 import { readable } from './domain/labels';
 import { evidenceFromForm, observationValueFor, type EvidenceForm } from './domain/observationForm';
 import { nowIso } from './domain/time';
-import type { Asset, AssetType, CapturedLocation, EvidenceMethod, FieldSession, MediaAttachment, Observation, Uuid } from './domain/types';
+import type { Asset, AssetType, CapturedLocation, EvidenceMethod, FieldCampaign, FieldSession, MediaAttachment, Observation, Uuid } from './domain/types';
 import { BUILT_IN_PROTOCOLS, DEFAULT_PROTOCOL } from './protocol/registry';
 import { protocolForSession, resolveCategoryLabel, resolveValueLabel } from './protocol/resolve';
 import { getProtocolValues } from './protocol/validation';
@@ -13,6 +13,8 @@ import type { FieldProtocol } from './protocol/types';
 import { buildSessionBackup, buildDataExportFiles } from './export/backup';
 import { buildSessionBundle } from './export/bundle';
 import { inspectRestoreFile, preflightRestore, restoreInspection, type RestoreInspection } from './export/restore';
+import { inspectFieldPackFile, installFieldPackImport, preflightFieldPackImport } from './fieldpack/import';
+import type { FieldPackInspection } from './fieldpack/types';
 import { extensionForMime } from './export/types';
 import { getStorageHealth, requestPersistence, type StorageHealth } from './storage/storageHealth';
 import { VoiceRecorder } from './components/VoiceRecorder';
@@ -30,6 +32,8 @@ const FieldMap = lazy(() => import('./components/FieldMap').then((m) => ({ defau
 
 type Screen =
   | { name: 'home' }
+  | { name: 'campaign'; campaignId: Uuid }
+  | { name: 'importFieldpack' }
   | { name: 'session'; sessionId: Uuid }
   | { name: 'capture'; sessionId: Uuid }
   | { name: 'detail'; sessionId: Uuid; observationId: Uuid }
@@ -106,6 +110,8 @@ export function App() {
     {error && <div className="error" role="alert"><strong>Action failed.</strong> {error}<button onClick={() => setError(null)} aria-label="Dismiss">×</button></div>}
     <main>
       {screen.name === 'home' && <HomeScreen revision={revision} go={go} changed={changed} fail={fail} />}
+      {screen.name === 'campaign' && <CampaignScreen campaignId={screen.campaignId} revision={revision} go={go} changed={changed} fail={fail} />}
+      {screen.name === 'importFieldpack' && <ImportFieldpackScreen go={go} changed={changed} fail={fail} />}
       {screen.name === 'restore' && <RestoreScreen go={go} changed={changed} fail={fail} />}
       {screen.name === 'session' && <SessionScreen sessionId={screen.sessionId} revision={revision} go={go} changed={changed} fail={fail} canUndo={lastDeleted?.sessionId === screen.sessionId} undoDelete={undoDelete} />}
       {screen.name === 'capture' && <CaptureScreen sessionId={screen.sessionId} go={go} changed={changed} fail={fail} />}
@@ -119,21 +125,38 @@ export function App() {
 
 interface SharedProps { go: (screen: Screen) => void; changed: (message?: string) => void; fail: (cause: unknown) => void; }
 
+interface CampaignSummary { campaign: FieldCampaign; sessionCount: number; assetCount: number; }
+
 function HomeScreen({ revision, go, changed, fail }: SharedProps & { revision: number }) {
+  const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
   const [sessions, setSessions] = useState<FieldSession[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showCampaignForm, setShowCampaignForm] = useState(false);
   const [title, setTitle] = useState(''); const [observerName, setObserverName] = useState(''); const [purpose, setPurpose] = useState('');
   const [protocolId, setProtocolId] = useState(DEFAULT_PROTOCOL.protocolId);
+  const [campaignTitle, setCampaignTitle] = useState(''); const [campaignProtocolId, setCampaignProtocolId] = useState(DEFAULT_PROTOCOL.protocolId);
   const selectedProtocol = BUILT_IN_PROTOCOLS.find((item) => item.protocolId === protocolId) ?? DEFAULT_PROTOCOL;
+  const selectedCampaignProtocol = BUILT_IN_PROTOCOLS.find((item) => item.protocolId === campaignProtocolId) ?? DEFAULT_PROTOCOL;
 
   useEffect(() => {
     let active = true; setLoading(true);
-    void repositories.listSessions().then(async (rows) => {
-      const entries = await Promise.all(rows.map(async (session) => [session.id, (await repositories.listObservations(session.id)).length] as const));
-      if (active) { setSessions(rows.sort((a, b) => Number(b.status === 'active') - Number(a.status === 'active'))); setCounts(Object.fromEntries(entries)); setLoading(false); }
-    }).catch((cause: unknown) => { if (active) { setLoading(false); fail(cause); } });
+    void (async () => {
+      const [campaignRows, sessionRows] = await Promise.all([repositories.listCampaigns(), repositories.listSessions()]);
+      const summaries = await Promise.all(campaignRows.map(async (campaign) => ({
+        campaign,
+        sessionCount: (await repositories.listCampaignSessions(campaign.id)).length,
+        assetCount: (await repositories.listCampaignAssets(campaign.id)).length,
+      })));
+      const standalone = sessionRows.filter((session) => session.campaignId === null);
+      const entries = await Promise.all(standalone.map(async (session) => [session.id, (await repositories.listObservations(session.id)).length] as const));
+      if (active) {
+        setCampaigns(summaries);
+        setSessions(standalone.sort((a, b) => Number(b.status === 'active') - Number(a.status === 'active')));
+        setCounts(Object.fromEntries(entries)); setLoading(false);
+      }
+    })().catch((cause: unknown) => { if (active) { setLoading(false); fail(cause); } });
     return () => { active = false; };
   }, [fail, revision]);
 
@@ -142,16 +165,136 @@ function HomeScreen({ revision, go, changed, fail }: SharedProps & { revision: n
     try {
       await requestPersistence();
       const session = await repositories.createSession({ title: title.trim(), observerName: observerName.trim() || null, purpose: purpose.trim() || null, deviceLabel: navigator.userAgent, protocol: selectedProtocol });
-      changed('Session created locally.'); go({ name: 'session', sessionId: session.id });
+      changed('Standalone session created locally.'); go({ name: 'session', sessionId: session.id });
     } catch (cause) { fail(cause); }
   };
-  const activeSession = sessions.find((session) => session.status === 'active');
+  const createCampaign = async (event: FormEvent) => {
+    event.preventDefault(); if (!campaignTitle.trim()) return;
+    try {
+      await requestPersistence();
+      const campaign = await repositories.createCampaign({ title: campaignTitle.trim(), protocol: selectedCampaignProtocol });
+      changed('Campaign created locally.'); go({ name: 'campaign', campaignId: campaign.id });
+    } catch (cause) { fail(cause); }
+  };
+
   return <section className="page">
-    <div className="eyebrow">Field sessions</div><h1>Capture evidence, even without a signal.</h1><p className="lede">Start or resume a local field campaign. Nothing is uploaded automatically.</p>
-    {activeSession && <button className="primary wide" onClick={() => go({ name: 'session', sessionId: activeSession.id })}>Resume “{activeSession.title}”</button>}
-    <div className="section-heading"><h2>On this device</h2><div className="button-row"><button className="ghost" onClick={() => go({ name: 'restore' })}>Restore backup</button><button className="secondary" onClick={() => setShowForm((value) => !value)}>+ New session</button></div></div>
+    <div className="eyebrow">FieldOS</div><h1>Prepare a mission, then capture offline.</h1><p className="lede">Import a FieldPack or start a local campaign, then run protocol-bound field sessions. Nothing is uploaded automatically.</p>
+
+    <div className="section-heading"><h2>Campaigns</h2><div className="button-row"><button className="secondary" onClick={() => go({ name: 'importFieldpack' })}>Import FieldPack</button><button className="secondary" onClick={() => setShowCampaignForm((value) => !value)}>+ New campaign</button></div></div>
+    {showCampaignForm && <form className="card form-stack" onSubmit={(event) => void createCampaign(event)}><label>Campaign title <span>required</span><input autoFocus value={campaignTitle} onChange={(event) => setCampaignTitle(event.target.value)} placeholder="Summer coastal monitoring" required /></label>{BUILT_IN_PROTOCOLS.length > 1 ? <label>Protocol <span>bound for the whole campaign</span><select value={campaignProtocolId} onChange={(event) => setCampaignProtocolId(event.target.value)}>{BUILT_IN_PROTOCOLS.map((item) => <option key={`${item.protocolId}-${item.version}`} value={item.protocolId}>{item.name} · v{item.version}</option>)}</select></label> : <div className="protocol-chip"><span className="field-label">Protocol</span><strong>{selectedCampaignProtocol.name} · v{selectedCampaignProtocol.version}</strong><small className="muted">Defines every session's categories and values. Bound at creation and never changed.</small></div>}<div className="button-row"><button className="primary" type="submit">Create campaign</button><button className="ghost" type="button" onClick={() => setShowCampaignForm(false)}>Cancel</button></div></form>}
+    {loading ? <p className="muted">Reading local data…</p> : campaigns.length === 0 ? <div className="empty"><strong>No campaigns yet.</strong><span>Import a FieldPack or create a local campaign to group sessions under one protocol and planned assets.</span></div> : <div className="list">{campaigns.map(({ campaign, sessionCount, assetCount }) => <button className="session-card" key={campaign.id} onClick={() => go({ name: 'campaign', campaignId: campaign.id })}><div><strong>{campaign.title}</strong><span>{protocolForSession({ protocolSnapshot: campaign.protocolSnapshot }).protocol.name} · {sessionCount} session{sessionCount === 1 ? '' : 's'} · {assetCount} planned asset{assetCount === 1 ? '' : 's'}</span></div><span className="status">{campaign.source.type === 'fieldpack' ? `FieldPack v${campaign.source.fieldpackVersion}` : 'Local'}</span></button>)}</div>}
+
+    <div className="section-heading"><h2>Standalone sessions</h2><div className="button-row"><button className="ghost" onClick={() => go({ name: 'restore' })}>Restore backup</button><button className="secondary" onClick={() => setShowForm((value) => !value)}>+ New session</button></div></div>
     {showForm && <form className="card form-stack" onSubmit={(event) => void createSession(event)}><label>Session title <span>required</span><input autoFocus value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Coastal trail survey" required /></label><label>Observer name <span>optional, unverified</span><input value={observerName} onChange={(event) => setObserverName(event.target.value)} /></label><label>Purpose <span>optional</span><textarea value={purpose} onChange={(event) => setPurpose(event.target.value)} rows={2} /></label>{BUILT_IN_PROTOCOLS.length > 1 ? <label>Protocol <span>bound for the whole session</span><select value={protocolId} onChange={(event) => setProtocolId(event.target.value)}>{BUILT_IN_PROTOCOLS.map((item) => <option key={`${item.protocolId}-${item.version}`} value={item.protocolId}>{item.name} · v{item.version}</option>)}</select></label> : <div className="protocol-chip"><span className="field-label">Protocol</span><strong>{selectedProtocol.name} · v{selectedProtocol.version}</strong><small className="muted">Defines this session’s observation categories and values. Bound at creation and never changed.</small></div>}<div className="button-row"><button className="primary" type="submit">Create session</button><button className="ghost" type="button" onClick={() => setShowForm(false)}>Cancel</button></div></form>}
-    {loading ? <p className="muted">Reading local data…</p> : sessions.length === 0 ? <div className="empty"><strong>No sessions yet.</strong><span>Start your first field session; it will remain on this device until exported.</span></div> : <div className="list">{sessions.map((session) => <button className="session-card" key={session.id} onClick={() => go({ name: 'session', sessionId: session.id })}><div><strong>{session.title}</strong><span>{formatTime(session.createdAt)} · {counts[session.id] ?? 0} observations</span></div><span className={`status ${session.status}`}>{session.status}</span></button>)}</div>}
+    {loading ? null : sessions.length === 0 ? <div className="empty"><strong>No standalone sessions.</strong><span>Standalone sessions live outside any campaign and remain on this device until exported.</span></div> : <div className="list">{sessions.map((session) => <button className="session-card" key={session.id} onClick={() => go({ name: 'session', sessionId: session.id })}><div><strong>{session.title}</strong><span>{formatTime(session.createdAt)} · {counts[session.id] ?? 0} observations</span></div><span className={`status ${session.status}`}>{session.status}</span></button>)}</div>}
+  </section>;
+}
+
+function CampaignScreen({ campaignId, revision, go, changed, fail }: SharedProps & { campaignId: Uuid; revision: number }) {
+  const [campaign, setCampaign] = useState<FieldCampaign | null>(null);
+  const [sessions, setSessions] = useState<FieldSession[]>([]);
+  const [assets, setAssets] = useState<Asset[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [starting, setStarting] = useState(false);
+  const [title, setTitle] = useState(''); const [observerName, setObserverName] = useState(''); const [purpose, setPurpose] = useState('');
+  useEffect(() => {
+    let active = true; setLoading(true);
+    void (async () => {
+      const found = await repositories.getCampaign(campaignId);
+      if (!found) throw new Error(`Campaign ${campaignId} was not found on this device.`);
+      const [campaignSessions, campaignAssets] = await Promise.all([repositories.listCampaignSessions(campaignId), repositories.listCampaignAssets(campaignId)]);
+      if (active) { setCampaign(found); setSessions(campaignSessions); setAssets(campaignAssets); setLoading(false); }
+    })().catch((cause: unknown) => { if (active) { setLoading(false); fail(cause); } });
+    return () => { active = false; };
+  }, [campaignId, fail, revision]);
+
+  const startSession = async (event: FormEvent) => {
+    event.preventDefault(); if (!campaign || !title.trim()) return; setStarting(true);
+    try {
+      await requestPersistence();
+      // The campaign already defines the protocol — the dedicated path snapshots the campaign's own
+      // protocol into the session. The user never re-selects a protocol here, and a mismatched one
+      // could not be persisted even if a caller tried.
+      const session = await repositories.createCampaignSession(campaignId, { title: title.trim(), observerName: observerName.trim() || null, purpose: purpose.trim() || null, deviceLabel: navigator.userAgent });
+      changed('Campaign session created locally.'); go({ name: 'session', sessionId: session.id });
+    } catch (cause) { fail(cause); } finally { setStarting(false); }
+  };
+
+  if (loading || !campaign) return <section className="page"><button className="back" onClick={() => go({ name: 'home' })}>← Home</button><p className="muted">Reading campaign…</p></section>;
+  const protocol = campaign.protocolSnapshot;
+  const activeSession = sessions.find((session) => session.status === 'active');
+  const typeCounts = assets.reduce<Record<string, number>>((acc, asset) => { const key = asset.assetType ?? 'unclassified'; acc[key] = (acc[key] ?? 0) + 1; return acc; }, {});
+  return <section className="page">
+    <button className="back" onClick={() => go({ name: 'home' })}>← Home</button>
+    <div className="eyebrow">{campaign.source.type === 'fieldpack' ? `Campaign · FieldPack ${campaign.source.fieldpackId} v${campaign.source.fieldpackVersion}` : 'Campaign · local'}</div>
+    <h1>{campaign.title}</h1>
+    {campaign.description && <p className="lede">{campaign.description}</p>}
+    <div className="card detail-grid"><div><span>Protocol</span><strong>{protocol.name} · v{protocol.version}</strong></div><div><span>Sessions</span><strong>{sessions.length}</strong></div><div><span>Planned assets</span><strong>{assets.length}</strong></div>{campaign.importedAt && <div><span>Imported</span><strong>{formatTime(campaign.importedAt)}</strong></div>}</div>
+
+    {activeSession
+      ? <button className="primary wide" onClick={() => go({ name: 'session', sessionId: activeSession.id })}>Resume “{activeSession.title}”</button>
+      : null}
+
+    <details className="card" open={sessions.length === 0}><summary>Start a field session</summary>
+      <form className="form-stack" onSubmit={(event) => void startSession(event)}>
+        <p className="muted">This session uses the campaign protocol <strong>{protocol.name} · v{protocol.version}</strong> — it cannot be changed per session.</p>
+        <label>Session title <span>required</span><input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Morning walk-through" required /></label>
+        <label>Observer name <span>optional, unverified</span><input value={observerName} onChange={(event) => setObserverName(event.target.value)} /></label>
+        <label>Purpose <span>optional</span><textarea rows={2} value={purpose} onChange={(event) => setPurpose(event.target.value)} /></label>
+        <button className="primary" type="submit" disabled={starting || !title.trim()}>{starting ? 'Creating…' : 'Start field session'}</button>
+      </form>
+    </details>
+
+    <div className="section-heading"><h2>Sessions</h2></div>
+    {sessions.length === 0 ? <div className="empty"><strong>No sessions yet.</strong><span>Start the first field session for this campaign above.</span></div> : <div className="list">{sessions.map((session) => <button className="session-card" key={session.id} onClick={() => go({ name: 'session', sessionId: session.id })}><div><strong>{session.title}</strong><span>{formatTime(session.createdAt)}</span></div><span className={`status ${session.status}`}>{session.status}</span></button>)}</div>}
+
+    <details className="card assets-panel"><summary>Planned assets ({assets.length})</summary>{assets.length > 0 ? <><p className="muted">{Object.entries(typeCounts).map(([type, count]) => `${readable(type)}: ${count}`).join(' · ')}</p><ul>{assets.map((asset) => <li key={asset.id}><strong>{asset.name}</strong><span>{asset.assetType ? readable(asset.assetType) : 'Unclassified'}{asset.latitude !== null ? ` · ${asset.latitude.toFixed(5)}, ${asset.longitude?.toFixed(5)}` : ''}{asset.sourceRef ? ` · ref ${asset.sourceRef}` : ''}</span></li>)}</ul></> : <p className="muted">No planned assets in this campaign.</p>}</details>
+  </section>;
+}
+
+function ImportFieldpackScreen({ go, changed, fail }: SharedProps) {
+  const [inspection, setInspection] = useState<FieldPackInspection | null>(null);
+  const [busy, setBusy] = useState(false);
+  const choose = async (file: File | null) => {
+    if (!file) return; setBusy(true); setInspection(null);
+    try {
+      // Full validation (manifest, SHA-256, protocol, GeoJSON) and the collision check run before any
+      // write. Selecting a file never touches IndexedDB.
+      setInspection(await preflightFieldPackImport(repositories, await inspectFieldPackFile(file)));
+    } catch (cause) { fail(cause); } finally { setBusy(false); }
+  };
+  const confirm = async () => {
+    if (!inspection || inspection.collision.kind !== 'none') return; setBusy(true);
+    try {
+      const result = await installFieldPackImport(repositories, inspection);
+      changed(`Campaign installed: “${result.title}” with ${result.assetCount} planned asset${result.assetCount === 1 ? '' : 's'}.`);
+      go({ name: 'campaign', campaignId: result.campaignId });
+    } catch (cause) { fail(cause); } finally { setBusy(false); }
+  };
+  const collisionMessage = inspection?.collision.kind === 'duplicate'
+    ? 'This exact FieldPack (same id and version) is already installed. Duplicate import is blocked.'
+    : inspection?.collision.kind === 'unsupported_upgrade'
+      ? `A campaign from this FieldPack id is already installed at version ${inspection.collision.existingVersion}. Automatic upgrades are not supported in v1.`
+      : null;
+  return <section className="page export-page">
+    <button className="back" onClick={() => go({ name: 'home' })}>← Home</button>
+    <div className="eyebrow">Import</div><h1>Import a FieldPack</h1>
+    <p className="lede">Choose a trusted <code>.fieldpack</code> file. It is validated and previewed before anything is written, and works fully offline once imported.</p>
+    <label className="card form-stack">FieldPack file<input type="file" accept=".fieldpack,.zip,application/zip" disabled={busy} onChange={(event) => void choose(event.target.files?.[0] ?? null)} /></label>
+    {busy && <p className="muted">Inspecting FieldPack…</p>}
+    {inspection && <article className="export-card featured">
+      <div><span className="export-kicker">Import preview</span><h2>{inspection.manifest.title}</h2>
+        {inspection.manifest.description && <p>{inspection.manifest.description}</p>}
+        <p>FieldPack <strong>{inspection.manifest.fieldpackId}</strong> · v{inspection.manifest.fieldpackVersion} · schema {inspection.manifest.fieldpackSchemaVersion}</p>
+        <p>Protocol <strong>{inspection.protocol.name}</strong> · v{inspection.protocol.version} · {inspection.protocol.categories.length} categories</p>
+        <p>{inspection.assets.length} planned asset{inspection.assets.length === 1 ? '' : 's'}{Object.keys(inspection.assetTypeBreakdown).length ? ` · ${Object.entries(inspection.assetTypeBreakdown).map(([type, count]) => `${readable(type)}: ${count}`).join(' · ')}` : ''}</p>
+        <p>Integrity <strong>{inspection.integrityStatus}</strong> · compatibility <strong>{inspection.compatibility}</strong></p>
+        {inspection.warnings.map((warning) => <p className="muted" key={warning}>{warning}</p>)}
+        {collisionMessage && <p className="error">{collisionMessage}</p>}
+      </div>
+      <button className="primary" disabled={busy || inspection.collision.kind !== 'none'} onClick={() => void confirm()}>Confirm import</button>
+    </article>}
+    <p className="muted">Integrity confirms only that payload bytes match this FieldPack’s manifest; it is not a signature, a trusted publisher, or authenticated methodology.</p>
   </section>;
 }
 
@@ -159,8 +302,10 @@ function SessionScreen({ sessionId, revision, go, changed, fail, canUndo, undoDe
   const [session, setSession] = useState<FieldSession | null>(null); const [observations, setObservations] = useState<Observation[]>([]); const [assets, setAssets] = useState<Asset[]>([]); const [mediaCounts, setMediaCounts] = useState<Record<string, MediaCounts>>({});
   const [assetName, setAssetName] = useState(''); const [assetType, setAssetType] = useState<AssetType>('other'); const [busy, setBusy] = useState(false);
   const load = useCallback(async () => {
-    const [nextSession, nextObservations, nextAssets] = await Promise.all([repositories.getSession(sessionId), repositories.listObservations(sessionId), repositories.listAssets(sessionId)]);
+    const [nextSession, nextObservations] = await Promise.all([repositories.getSession(sessionId), repositories.listObservations(sessionId)]);
     if (!nextSession) throw new Error(`Session ${sessionId} was not found on this device.`);
+    // Resolve session-dropped assets PLUS the campaign's planned assets (when campaign-bound).
+    const nextAssets = await repositories.listSessionAssets(nextSession);
     const media = await Promise.all(nextObservations.map(async (observation) => [observation.id, countMedia(await repositories.listMedia(observation.id))] as const));
     setSession(nextSession); setObservations(nextObservations); setAssets(nextAssets); setMediaCounts(Object.fromEntries(media));
   }, [sessionId]);
@@ -177,7 +322,7 @@ function SessionScreen({ sessionId, revision, go, changed, fail, canUndo, undoDe
   if (!session) return <section className="page"><p>Opening local session…</p></section>;
   const { protocol } = protocolForSession(session);
   return <section className="page session-page">
-    <button className="back" onClick={() => go({ name: 'home' })}>← Sessions</button><div className="session-title"><div><div className="eyebrow">{session.status} session</div><h1>{session.title}</h1><p>{observations.length} observations · {assets.length} assets</p></div><div className="session-title-actions"><button className="secondary" onClick={() => go({ name: 'map', sessionId })}>Map</button><button className="secondary" onClick={() => go({ name: 'export', sessionId })}>Export & backup</button></div></div>
+    <button className="back" onClick={() => go(session.campaignId ? { name: 'campaign', campaignId: session.campaignId } : { name: 'home' })}>← {session.campaignId ? 'Campaign' : 'Sessions'}</button><div className="session-title"><div><div className="eyebrow">{session.status} session{session.campaignId ? ' · campaign' : ''}</div><h1>{session.title}</h1><p>{observations.length} observations · {assets.length} assets</p></div><div className="session-title-actions"><button className="secondary" onClick={() => go({ name: 'map', sessionId })}>Map</button><button className="secondary" onClick={() => go({ name: 'export', sessionId })}>Export & backup</button></div></div>
     {canUndo && <div className="undo">Observation removed. <button onClick={() => void undoDelete()}>Undo</button></div>}
     <div className="section-heading"><h2>Observations</h2></div>
     {observations.length === 0 ? <div className="empty"><strong>No observations yet.</strong><span>Use the capture button to record the first one.</span></div> : <div className="list">{observations.map((observation) => <button className="observation-card" key={observation.id} onClick={() => go({ name: 'detail', sessionId, observationId: observation.id })}><div className="observation-icon">{resolveCategoryLabel(protocol, observation.observation.category).slice(0, 1)}</div><div><strong>{resolveCategoryLabel(protocol, observation.observation.category)}</strong><span>{observation.observation.value ? resolveValueLabel(protocol, observation.observation.category, observation.observation.value) : observation.note || 'Free observation'}</span><small>{formatTime(observation.capturedAt)} · {observation.capturedLocation.locationStatus === 'CAPTURED' ? `±${Math.round(observation.capturedLocation.accuracyMeters ?? 0)}m` : `GPS ${readable(observation.capturedLocation.locationStatus)}`}{mediaCounts[observation.id] && summarizeMedia(mediaCounts[observation.id]!) ? ` · ${summarizeMedia(mediaCounts[observation.id]!)}` : ''}{observation.edited ? ` · Edited ×${observation.editCount}` : ''}</small></div><span aria-hidden="true">›</span></button>)}</div>}
@@ -194,10 +339,12 @@ function MapScreen({ sessionId, revision, go, fail }: SharedProps & { sessionId:
   const [loading, setLoading] = useState(true);
   useEffect(() => {
     let active = true; setLoading(true);
-    void Promise.all([repositories.getSession(sessionId), repositories.listObservations(sessionId), repositories.listAssets(sessionId)])
-      .then(([nextSession, nextObservations, nextAssets]) => {
+    void Promise.all([repositories.getSession(sessionId), repositories.listObservations(sessionId)])
+      .then(async ([nextSession, nextObservations]) => {
         if (!active) return;
         if (!nextSession) throw new Error(`Session ${sessionId} was not found on this device.`);
+        const nextAssets = await repositories.listSessionAssets(nextSession);
+        if (!active) return;
         setSession(nextSession); setObservations(nextObservations); setAssets(nextAssets); setLoading(false);
       })
       .catch((cause: unknown) => { if (active) { setLoading(false); fail(cause); } });
@@ -216,7 +363,16 @@ function CaptureScreen({ sessionId, go, changed, fail }: SharedProps & { session
   const [category, setCategory] = useState<string | null>(null); const [value, setValue] = useState<string | null>(null); const [evidence, setEvidence] = useState<EvidenceForm>(emptyEvidence); const [note, setNote] = useState(''); const [photo, setPhoto] = useState<File | null>(null); const [audio, setAudio] = useState<AudioRecording | null>(null);
   const [assets, setAssets] = useState<Asset[]>([]); const [assetId, setAssetId] = useState(''); const [saving, setSaving] = useState(false);
   const acquireLocation = useCallback(async () => { setLocating(true); const next = await captureCurrentLocation(); setLocation(next); setLocating(false); }, []);
-  useEffect(() => { void acquireLocation(); void repositories.listAssets(sessionId).then(setAssets).catch(fail); void repositories.getSession(sessionId).then((s) => setProtocol(protocolForSession(s).protocol)).catch(fail); }, [acquireLocation, fail, sessionId]);
+  useEffect(() => {
+    void acquireLocation();
+    // Load the session once, then resolve its protocol and the assets visible in it (session +
+    // campaign planned assets) so a campaign observation can link a planned asset.
+    void repositories.getSession(sessionId).then(async (s) => {
+      if (!s) return;
+      setProtocol(protocolForSession(s).protocol);
+      setAssets(await repositories.listSessionAssets(s));
+    }).catch(fail);
+  }, [acquireLocation, fail, sessionId]);
   const assetOptions = useMemo(() => {
     if (location.latitude === null || location.longitude === null) return assets.map((asset) => ({ asset, distanceMeters: null }));
     return nearbyAssets({ latitude: location.latitude, longitude: location.longitude }, assets);

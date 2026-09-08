@@ -18,7 +18,14 @@ export function parseSessionJson(text: string): SessionBundle {
     ...bundle,
     // Pre-Protocol-Engine exports have no session protocol snapshot: normalize a missing field to
     // explicit null (legacy session). No fabricated protocol is ever invented for those records.
-    session: { ...bundle.session, protocolSnapshot: bundle.session.protocolSnapshot ?? null },
+    // Pre-Campaign exports have no `campaignId`: normalize to null (standalone session).
+    session: {
+      ...bundle.session,
+      protocolSnapshot: bundle.session.protocolSnapshot ?? null,
+      campaignId: bundle.session.campaignId ?? null,
+    },
+    // Pre-Campaign exports carry no campaign context: normalize to null. No Campaign is fabricated.
+    campaignContext: bundle.campaignContext ?? null,
     observations: bundle.observations.map((observation) => ({
       ...observation,
       capturedLocation: normalizeCapturedLocation(observation.capturedLocation),

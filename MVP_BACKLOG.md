@@ -62,6 +62,22 @@ existing contract. Code, merged history, and recorded evidence together determin
   user protocol authoring, import, or remote registry (deferred to a future FieldPack gate).
 - Corrected on 2026-09-01: New Observation offers separate native **Take photo** and **Choose photo**
   actions. Both stage the same single optional photo and use the existing local media persistence path.
+- Delivered on 2026-09-07: **Campaign + FieldPack v1**. FieldOS can prepare a bounded field mission
+  before going outside and run it fully offline. A versioned, SHA-256 integrity-checked `.fieldpack`
+  (ZIP of `manifest.json` + `protocol.json` + `assets.geojson`) is validated **preflight-first**
+  entirely in memory (manifest → SHA-256 → protocol → GeoJSON → collision → preview → confirm) and
+  installed **atomically** as a local **`FieldCampaign`** (`src/fieldpack/`) binding one immutable
+  protocol snapshot plus preloaded **point** assets; campaigns can also be created locally. Sessions
+  bind to a campaign (`FieldSession.campaignId`), inherit a copy of its protocol, and resolve campaign
+  planned assets by reference (nearby/link/map) without duplication; assets keep `campaignId` +
+  `sourceRef` (external mission id preserved beside the local UUID). Duplicate `fieldpackId+version`
+  imports and same-id different-version upgrades are blocked. Export carries lightweight
+  `campaignContext`; a campaign-bound session restores self-contained with **no fabricated Campaign**.
+  Logical schema 4 → 5; **Dexie DB 2 → 3** (new `campaigns` store + `campaignId` indexes; legacy rows
+  preserved). This closes the deferred "preloaded GeoJSON assets" capability for **points only**.
+  Claim boundary: **not** remote deployment, live team coordination, signed/trusted packages,
+  automatic updates, a FieldPack/protocol editor, generic GIS import, offline maps, coverage planning,
+  or analytics.
 - The historical P0 decision was list-first, with no interactive map library. The later P1-1 map
   does not revise that history or make offline maps implemented.
 - The remaining P1/P2 entries below are deferred unless the product contract is deliberately changed.
@@ -140,8 +156,12 @@ existing contract. Code, merged history, and recorded evidence together determin
   network dependency. Permission denial, storage pressure, exact 3-minute auto-stop,
   unsupported-browser handling, other checklist edge cases, and Android physical validation remain
   pending. See `docs/VOICE_NOTES_SMOKE_TEST.md` for the evidence boundary and remaining plan.
-- **P1-3** Import preloaded reference assets from GeoJSON (with `source: preloaded`). **Deferred; not implemented.**
-- **P1-4** Asset polygon geometry (beyond points). **Deferred; not implemented.**
+- **P1-3** Import preloaded reference assets from GeoJSON (with `source: preloaded`). **Delivered
+  2026-09-07 as part of Campaign + FieldPack v1** — POINT assets only, imported inside a `.fieldpack`
+  and installed atomically as campaign-owned assets (`campaignId` + `sourceRef`, `sessionId: null`).
+  Standalone GeoJSON import outside a FieldPack, and non-point geometry, remain out of scope.
+- **P1-4** Asset polygon geometry (beyond points). **Deferred; not implemented** (FieldPack v1
+  rejects non-point geometry).
 - **P1-5** Full revision/audit log per observation (append-only), beyond editCount. **Delivered
   2026-08-31.** Transactional `observationAudit` store (Dexie DB v2, logical schema v3) recording
   `CREATED` / `INTERPRETATION_UPDATED` / `LOCATION_ADJUSTED` / `SOFT_DELETED` / `RESTORED` with

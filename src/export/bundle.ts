@@ -1,8 +1,13 @@
 import type { Repositories } from '../db/repositories';
 import { nowIso } from '../domain/time';
 import { APP_VERSION, SCHEMA_VERSION } from '../version';
-import { backupFilenameFor, type MediaMetadata, type SessionBundle } from './types';
-import type { MediaAttachment, Uuid } from '../domain/types';
+import {
+  backupFilenameFor,
+  type MediaMetadata,
+  type SessionBundle,
+  type SessionCampaignContext,
+} from './types';
+import type { Asset, MediaAttachment, Uuid } from '../domain/types';
 
 /**
  * Assemble the canonical bundle for a session.
@@ -20,9 +25,33 @@ export async function buildSessionBundle(
   const session = await repos.getSession(sessionId);
   if (!session) throw new Error(`Session ${sessionId} not found`);
 
-  const assets = await repos.listAssets(sessionId);
+  const sessionAssets = await repos.listAssets(sessionId);
   const observations = await repos.listObservations(sessionId, { includeDeleted: true });
   const auditEntries = await repos.listSessionAuditEntries(sessionId);
+
+  // Campaign context + referential integrity (Campaign + FieldPack v1 §20). A campaign-bound
+  // session may reference campaign-level assets that are NOT session-scoped. To keep the bundle
+  // self-contained (every observation `assetId` resolves) without dumping the whole campaign, we
+  // include ONLY the campaign assets actually referenced by this session's observations.
+  let campaignContext: SessionCampaignContext | null = null;
+  const assets: Asset[] = [...sessionAssets];
+  if (session.campaignId) {
+    const campaign = await repos.getCampaign(session.campaignId);
+    if (campaign) {
+      campaignContext = {
+        campaignId: campaign.id,
+        title: campaign.title,
+        sourceFieldpackId: campaign.source.type === 'fieldpack' ? campaign.source.fieldpackId : null,
+        sourceFieldpackVersion: campaign.source.type === 'fieldpack' ? campaign.source.fieldpackVersion : null,
+      };
+    }
+    const referenced = new Set(observations.map((obs) => obs.assetId).filter((id): id is Uuid => id !== null));
+    const present = new Set(assets.map((asset) => asset.id));
+    const campaignAssets = await repos.listCampaignAssets(session.campaignId);
+    for (const asset of campaignAssets) {
+      if (referenced.has(asset.id) && !present.has(asset.id)) assets.push(asset);
+    }
+  }
 
   const mediaBlobs: MediaAttachment[] = [];
   const media: MediaMetadata[] = [];
@@ -54,6 +83,7 @@ export async function buildSessionBundle(
     observations,
     media,
     auditEntries,
+    campaignContext,
   };
   return { bundle, mediaBlobs };
 }

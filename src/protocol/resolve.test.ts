@@ -6,9 +6,9 @@ import type { FieldSession } from '../domain/types';
 
 function session(protocolSnapshot: FieldSession['protocolSnapshot']): FieldSession {
   return {
-    id: 's', schemaVersion: 4, title: 'S', purpose: null, observerName: null,
+    id: 's', schemaVersion: 5, title: 'S', purpose: null, observerName: null,
     status: 'active', createdAt: 't', closedAt: null, updatedAt: 't', deviceLabel: null,
-    protocolSnapshot,
+    protocolSnapshot, campaignId: null,
   };
 }
 

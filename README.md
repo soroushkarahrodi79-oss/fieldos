@@ -19,6 +19,10 @@ The repository contains the first usable MVP workflow:
 - open a **spatial map** of a session (MapLibre GL) to see observations, assets, and the current
   position as points, tap a point to inspect it, and jump to the full observation detail — with an
   **online-only** basemap that degrades gracefully (records stay usable if tiles cannot load);
+- prepare a bounded field mission as a **Campaign**: import a versioned, SHA-256 integrity-checked
+  **FieldPack** (`.fieldpack`) that carries one field protocol and planned **point** assets, or
+  create a local campaign against a built-in protocol; then run one or more protocol-bound field
+  sessions inside it — all **fully offline** after import;
 - export portable data, create a ZIP backup with media, and conservatively restore a full ZIP or data-only canonical JSON;
 - surface storage durability and quota failures instead of reporting false success.
 
@@ -81,6 +85,19 @@ The browser app uses IndexedDB. Clearing site data removes local FieldOS records
 ## Architecture
 
 FieldOS deliberately has no backend in the MVP. React and TypeScript provide the UI and domain model, Dexie wraps IndexedDB, the Web Geolocation API captures location provenance, Workbox precaches the application shell, and `fflate` creates offline ZIP backups.
+
+**Campaign + FieldPack (v1).** A **FieldPack** is preparation material a researcher builds before
+going outside: a `.fieldpack` ZIP containing `manifest.json`, `protocol.json` (exactly one
+`FieldProtocol`, validated by the Protocol Engine), and `assets.geojson` (a FeatureCollection of
+**Point** assets), with **required** SHA-256 payload integrity. Import is **preflight-first** (parse
+→ validate manifest → verify SHA-256 → validate protocol → validate GeoJSON → check collision →
+preview → confirm) and writes nothing until confirmation; installation is **atomic**, creating a
+local **Campaign** (`src/fieldpack/`, `FieldCampaign`) that binds one immutable protocol snapshot and
+its preloaded assets. Campaigns can also be created locally. Sessions started inside a campaign
+inherit its protocol and are grouped under it; campaign assets appear in a session's nearby/link/map
+resolution without being duplicated. Integrity is a **corruption/change check only** — not a
+signature, a trusted publisher, or authenticated methodology. This is **not** remote mission
+deployment, automatic updates, a FieldPack/protocol editor, offline map tiles, or coverage planning.
 
 **Protocol Engine (v1).** The observation vocabulary is definition-driven, not hard-coded. Each session embeds an immutable, versioned **protocol snapshot** (`src/protocol/`) that defines the categories, controlled values, labels, and note policy for that session; the capture, validation, detail, map, and export surfaces all read from it. The built-in **Tourism Field Observation Core** protocol carries the original vocabulary and is the default. Evidence provenance (OBSERVED / MEASURED / REPORTED) stays FieldOS-owned and is deliberately not part of any protocol. It is **not** a generic form builder or survey platform, and v1 has no user-authored protocols, protocol import, or remote registry. Sessions created before the engine keep `protocolSnapshot: null` and render via the legacy vocabulary; no fabricated snapshot is written for them. The optional spatial map uses **MapLibre GL JS** (open-source, no API key) rendering derived map features over an **online-only** OpenStreetMap raster basemap — suitable for MVP/testing, not high-volume production, and **not** an offline-maps feature (PMTiles/offline tiles are deferred). The map is a read-only derived view; it consumes the existing canonical data, adds no persisted coordinates, and requires no schema or database migration. See [ARCHITECTURE_DECISION.md](ARCHITECTURE_DECISION.md) and [DATA_MODEL.md](DATA_MODEL.md).
 
