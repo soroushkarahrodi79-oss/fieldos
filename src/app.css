@@ -381,6 +381,10 @@ fieldset > .field-hint { margin-top: 8px; }
 
 /* ── Responsive ── */
 @media (max-width: 620px) {
+  .campaign-execution-heading { flex-direction: column; }
+  .execution-metrics { grid-template-columns: repeat(2, 1fr); }
+  .execution-asset-list > li { align-items: stretch; flex-direction: column; }
+  .asset-capture-action { width: 100%; }
   .field-map { height: clamp(320px, 58vh, 520px); }
   .map-card-grid { grid-template-columns: 1fr; gap: 10px; }
   .session-title-actions { width: 100%; }
