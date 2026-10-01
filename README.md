@@ -23,6 +23,10 @@ The repository contains the first usable MVP workflow:
   **FieldPack** (`.fieldpack`) that carries one field protocol and planned **point** assets, or
   create a local campaign against a built-in protocol; then run one or more protocol-bound field
   sessions inside it — all **fully offline** after import;
+- execute a Campaign with an evidence-derived **Campaign Execution v1** view: planned-asset coverage,
+  remaining targets, observations without a planned-asset link, missing raw GPS, provenance disclosures,
+  per-asset **Capture here**, and a portable campaign-summary JSON — without persisting workflow status
+  or claiming that a linked observation proves a physical visit to the exact point;
 - export portable data, create a ZIP backup with media, and conservatively restore a full ZIP or data-only canonical JSON;
 - surface storage durability and quota failures instead of reporting false success.
 
