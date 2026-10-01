@@ -227,9 +227,32 @@ fieldset > .field-hint { margin-top: 8px; }
 .photo-selection { min-width: 0; color: var(--text-2); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 
 .voice-recorder { display: grid; gap: 10px; }
-.voice-record-btn { justify-self: start; }
+
+/* Primary voice action — big, centered, accent-blue (the one coloured CTA here) */
+.voice-record-btn { justify-self: center; display: grid; justify-items: center; gap: 11px; margin: 6px 0; padding: 0; border: 0; background: transparent; color: inherit; }
+.voice-record-mic { display: grid; place-items: center; width: 84px; height: 84px; border-radius: 50%; background: var(--accent); color: #fff; box-shadow: var(--sh-cta); }
+.voice-record-mic svg { width: 36px; height: 36px; display: block; }
+.voice-record-label { font-weight: 600; font-size: .98rem; letter-spacing: -.01em; color: var(--text); }
+.voice-record-btn:focus-visible { outline: none; box-shadow: none; }
+.voice-record-btn:focus-visible .voice-record-mic { box-shadow: var(--sh-cta), 0 0 0 4px var(--accent-bg); }
+@media (prefers-reduced-motion: no-preference) {
+  .voice-record-mic { transition: transform .15s var(--ease-out-quart), filter .15s, box-shadow .15s; }
+  .voice-record-btn:hover .voice-record-mic { filter: brightness(1.05); transform: scale(1.04); }
+  .voice-record-btn:active .voice-record-mic { transform: scale(.96); }
+}
 .voice-recording-active, .voice-preview { display: grid; gap: 8px; padding: 13px; border-radius: var(--r-thumb); background: var(--bg); border: 1px solid var(--hairline); }
+.voice-recording-active { justify-items: center; text-align: center; gap: 12px; padding: 18px 13px; }
 .recording-indicator { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; color: var(--danger); }
+
+/* Stop control — mirrors the record button, iOS red while live */
+.voice-stop-btn { display: grid; place-items: center; width: 84px; height: 84px; margin: 2px 0; padding: 0; border: 0; border-radius: 50%; background: #ff3b30; box-shadow: 0 20px 54px rgba(255, 59, 48, 0.24); }
+.voice-stop-glyph { width: 30px; height: 30px; border-radius: 7px; background: #fff; }
+.voice-stop-btn:focus-visible { outline: none; box-shadow: 0 20px 54px rgba(255, 59, 48, 0.24), 0 0 0 4px var(--danger-bg); }
+@media (prefers-reduced-motion: no-preference) {
+  .voice-stop-btn { transition: transform .15s var(--ease-out-quart), filter .15s, box-shadow .15s; }
+  .voice-stop-btn:hover { filter: brightness(1.05); transform: scale(1.04); }
+  .voice-stop-btn:active { transform: scale(.96); }
+}
 .rec-dot { width: 11px; height: 11px; border-radius: 50%; background: #ff3b30; }
 @media (prefers-reduced-motion: no-preference) { .rec-dot { animation: rec-pulse 1.2s ease-in-out infinite; } }
 @keyframes rec-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }

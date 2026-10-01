@@ -162,8 +162,28 @@ export function VoiceRecorder({ value, onChange }: VoiceRecorderProps) {
   return (
     <div className="voice-recorder" role="group" aria-label="Voice note">
       {(state === 'idle' || state === 'error') && !value && (
-        <button type="button" className="secondary voice-record-btn" onClick={() => void startRecording()}>
-          🎙 Record voice note
+        <button
+          type="button"
+          className="voice-record-btn"
+          onClick={() => void startRecording()}
+          aria-label="Record voice note"
+        >
+          <span className="voice-record-mic" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path
+                d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"
+                fill="currentColor"
+              />
+              <path
+                d="M19 11a7 7 0 0 1-14 0M12 18v3"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </span>
+          <span className="voice-record-label">Record voice note</span>
         </button>
       )}
 
@@ -179,8 +199,13 @@ export function VoiceRecorder({ value, onChange }: VoiceRecorderProps) {
             <span className="rec-dot" aria-hidden="true" /> Recording voice note ·{' '}
             {formatDuration(elapsedMs)}
           </span>
-          <button type="button" className="secondary" onClick={stopRecording}>
-            ■ Stop
+          <button
+            type="button"
+            className="voice-stop-btn"
+            onClick={stopRecording}
+            aria-label="Stop recording"
+          >
+            <span className="voice-stop-glyph" aria-hidden="true" />
           </button>
           <small className="muted">Stops automatically at {formatDuration(MAX_RECORDING_MS)}.</small>
         </div>
