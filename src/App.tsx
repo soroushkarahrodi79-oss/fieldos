@@ -496,7 +496,7 @@ function CaptureScreen({ sessionId, initialAssetId, go, changed, fail }: SharedP
       setProtocol(protocolForSession(s).protocol);
       const visibleAssets = await repositories.listSessionAssets(s);
       setAssets(visibleAssets);
-      if (initialAssetId && visibleAssets.some((asset) => asset.id === initialAssetId)) setAssetId(initialAssetId);
+      if (initialAssetId) setAssetId(visibleAssets.some((asset) => asset.id === initialAssetId) ? initialAssetId : '');
     }).catch(fail);
   }, [acquireLocation, fail, initialAssetId, sessionId]);
   const assetOptions = useMemo(() => {
