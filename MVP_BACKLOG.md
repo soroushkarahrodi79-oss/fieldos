@@ -183,6 +183,14 @@ existing contract. Code, merged history, and recorded evidence together determin
 - **P1-9** Coordinate-precision reduction option when sharing (privacy). **Deferred; not implemented.**
 - **P1-10** Quota dashboard (bytes used / remaining, per session). **Deferred; not implemented.**
 - **P1-11** Session-level and per-observation export; export selected records. **Deferred; not implemented.**
+- **P1-12** Campaign Execution v1. **Delivered 2026-10-01.** Campaign progress is derived from canonical
+  campaign sessions, planned assets, and non-deleted observations: a planned asset is `COVERED` only
+  when at least one campaign observation links to it. The campaign screen shows coverage, remaining
+  assets, observations without a planned-asset link, missing raw GPS, manual-adjustment / REPORTED
+  provenance disclosures, and a conservative `READY_TO_REVIEW` / `REVIEW_RECOMMENDED` checkpoint.
+  Planned assets can launch **Capture here** into the active campaign session with the asset preselected,
+  and a derived campaign-summary JSON can be exported. No mutable completion status is written to
+  Campaign or Asset, no DB migration is introduced, and `COVERED` does not claim physical visitation.
 
 ## P2 — later
 
