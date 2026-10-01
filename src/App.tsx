@@ -15,6 +15,7 @@ import { buildSessionBundle } from './export/bundle';
 import { inspectRestoreFile, preflightRestore, restoreInspection, type RestoreInspection } from './export/restore';
 import { inspectFieldPackFile, installFieldPackImport, preflightFieldPackImport } from './fieldpack/import';
 import type { FieldPackInspection } from './fieldpack/types';
+import { summarizeCampaignExecution } from './campaign/execution';
 import { extensionForMime } from './export/types';
 import { getStorageHealth, requestPersistence, type StorageHealth } from './storage/storageHealth';
 import { VoiceRecorder } from './components/VoiceRecorder';
@@ -35,7 +36,7 @@ type Screen =
   | { name: 'campaign'; campaignId: Uuid }
   | { name: 'importFieldpack' }
   | { name: 'session'; sessionId: Uuid }
-  | { name: 'capture'; sessionId: Uuid }
+  | { name: 'capture'; sessionId: Uuid; assetId?: Uuid }
   | { name: 'detail'; sessionId: Uuid; observationId: Uuid }
   | { name: 'map'; sessionId: Uuid }
   | { name: 'export'; sessionId: Uuid }
@@ -114,7 +115,7 @@ export function App() {
       {screen.name === 'importFieldpack' && <ImportFieldpackScreen go={go} changed={changed} fail={fail} />}
       {screen.name === 'restore' && <RestoreScreen go={go} changed={changed} fail={fail} />}
       {screen.name === 'session' && <SessionScreen sessionId={screen.sessionId} revision={revision} go={go} changed={changed} fail={fail} canUndo={lastDeleted?.sessionId === screen.sessionId} undoDelete={undoDelete} />}
-      {screen.name === 'capture' && <CaptureScreen sessionId={screen.sessionId} go={go} changed={changed} fail={fail} />}
+      {screen.name === 'capture' && <CaptureScreen sessionId={screen.sessionId} initialAssetId={screen.assetId ?? null} go={go} changed={changed} fail={fail} />}
       {screen.name === 'map' && <MapScreen sessionId={screen.sessionId} revision={revision} go={go} changed={changed} fail={fail} />}
       {screen.name === 'detail' && <DetailScreen sessionId={screen.sessionId} observationId={screen.observationId} go={go} changed={changed} fail={fail} deleted={(id) => setLastDeleted({ id, sessionId: screen.sessionId })} />}
       {screen.name === 'export' && <ExportScreen sessionId={screen.sessionId} go={go} changed={changed} fail={fail} />}
@@ -194,19 +195,43 @@ function CampaignScreen({ campaignId, revision, go, changed, fail }: SharedProps
   const [campaign, setCampaign] = useState<FieldCampaign | null>(null);
   const [sessions, setSessions] = useState<FieldSession[]>([]);
   const [assets, setAssets] = useState<Asset[]>([]);
+  const [observations, setObservations] = useState<Observation[]>([]);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [title, setTitle] = useState(''); const [observerName, setObserverName] = useState(''); const [purpose, setPurpose] = useState('');
+
   useEffect(() => {
     let active = true; setLoading(true);
     void (async () => {
       const found = await repositories.getCampaign(campaignId);
       if (!found) throw new Error(`Campaign ${campaignId} was not found on this device.`);
-      const [campaignSessions, campaignAssets] = await Promise.all([repositories.listCampaignSessions(campaignId), repositories.listCampaignAssets(campaignId)]);
-      if (active) { setCampaign(found); setSessions(campaignSessions); setAssets(campaignAssets); setLoading(false); }
+      const [campaignSessions, campaignAssets] = await Promise.all([
+        repositories.listCampaignSessions(campaignId),
+        repositories.listCampaignAssets(campaignId),
+      ]);
+      const observationGroups = await Promise.all(
+        campaignSessions.map((session) => repositories.listObservations(session.id)),
+      );
+      if (active) {
+        setCampaign(found);
+        setSessions(campaignSessions);
+        setAssets(campaignAssets);
+        setObservations(observationGroups.flat());
+        setLoading(false);
+      }
     })().catch((cause: unknown) => { if (active) { setLoading(false); fail(cause); } });
     return () => { active = false; };
   }, [campaignId, fail, revision]);
+
+  const execution = useMemo(
+    () => summarizeCampaignExecution(sessions, assets, observations),
+    [assets, observations, sessions],
+  );
+  const executionByAsset = useMemo(
+    () => new Map(execution.assets.map((item) => [item.assetId, item])),
+    [execution.assets],
+  );
 
   const startSession = async (event: FormEvent) => {
     event.preventDefault(); if (!campaign || !title.trim()) return; setStarting(true);
@@ -220,16 +245,98 @@ function CampaignScreen({ campaignId, revision, go, changed, fail }: SharedProps
     } catch (cause) { fail(cause); } finally { setStarting(false); }
   };
 
+  const exportExecutionSummary = async () => {
+    if (!campaign) return;
+    setExporting(true);
+    try {
+      const payload = {
+        format: 'fieldos-campaign-execution-summary',
+        version: 1,
+        generatedAt: nowIso(),
+        campaign: {
+          id: campaign.id,
+          title: campaign.title,
+          description: campaign.description,
+          protocol: {
+            protocolId: campaign.protocolSnapshot.protocolId,
+            version: campaign.protocolSnapshot.version,
+            name: campaign.protocolSnapshot.name,
+          },
+          source: campaign.source,
+        },
+        sessionCount: sessions.length,
+        execution,
+        plannedAssets: assets.map((asset) => ({
+          id: asset.id,
+          sourceRef: asset.sourceRef,
+          name: asset.name,
+          assetType: asset.assetType,
+          latitude: asset.latitude,
+          longitude: asset.longitude,
+          execution: executionByAsset.get(asset.id) ?? null,
+        })),
+      };
+      const file = new File(
+        [JSON.stringify(payload, null, 2)],
+        `fieldos-campaign-${campaign.id}-summary.json`,
+        { type: 'application/json' },
+      );
+      const mode = await deliverFiles([file]);
+      changed(`Campaign execution summary ${mode}.`);
+    } catch (cause) { fail(cause); } finally { setExporting(false); }
+  };
+
   if (loading || !campaign) return <section className="page"><button className="back" onClick={() => go({ name: 'home' })}>← Home</button><p className="muted">Reading campaign…</p></section>;
   const protocol = campaign.protocolSnapshot;
   const activeSession = sessions.find((session) => session.status === 'active');
   const typeCounts = assets.reduce<Record<string, number>>((acc, asset) => { const key = asset.assetType ?? 'unclassified'; acc[key] = (acc[key] ?? 0) + 1; return acc; }, {});
+  const checkpointLabel = execution.checkpoint.status === 'READY_TO_REVIEW'
+    ? 'Ready to review'
+    : execution.checkpoint.status === 'NO_PLANNED_ASSETS'
+      ? 'No planned-asset gate'
+      : 'Review recommended';
+
   return <section className="page">
     <button className="back" onClick={() => go({ name: 'home' })}>← Home</button>
     <div className="eyebrow">{campaign.source.type === 'fieldpack' ? `Campaign · FieldPack ${campaign.source.fieldpackId} v${campaign.source.fieldpackVersion}` : 'Campaign · local'}</div>
     <h1>{campaign.title}</h1>
     {campaign.description && <p className="lede">{campaign.description}</p>}
-    <div className="card detail-grid"><div><span>Protocol</span><strong>{protocol.name} · v{protocol.version}</strong></div><div><span>Sessions</span><strong>{sessions.length}</strong></div><div><span>Planned assets</span><strong>{assets.length}</strong></div>{campaign.importedAt && <div><span>Imported</span><strong>{formatTime(campaign.importedAt)}</strong></div>}</div>
+
+    <div className="card detail-grid">
+      <div><span>Protocol</span><strong>{protocol.name} · v{protocol.version}</strong></div>
+      <div><span>Sessions</span><strong>{sessions.length}</strong></div>
+      <div><span>Planned assets</span><strong>{assets.length}</strong></div>
+      <div><span>Covered</span><strong>{execution.coveredAssetCount}{execution.coveragePercent === null ? '' : ` · ${execution.coveragePercent}%`}</strong></div>
+      {campaign.importedAt && <div><span>Imported</span><strong>{formatTime(campaign.importedAt)}</strong></div>}
+    </div>
+
+    <section className="card campaign-execution">
+      <div className="campaign-execution-heading">
+        <div>
+          <div className="eyebrow">Campaign execution v1</div>
+          <h2>{execution.plannedAssetCount === 0 ? 'Evidence checkpoint' : `${execution.coveredAssetCount} / ${execution.plannedAssetCount} planned assets covered`}</h2>
+          <p className="muted">Coverage is derived from non-deleted observations linked to planned assets. It does not claim a physical visit to the exact coordinate.</p>
+        </div>
+        <span className={`execution-status ${execution.checkpoint.status.toLowerCase()}`}>{checkpointLabel}</span>
+      </div>
+
+      {execution.plannedAssetCount > 0 && <progress className="campaign-progress" max={execution.plannedAssetCount} value={execution.coveredAssetCount}>{execution.coveragePercent}%</progress>}
+
+      <div className="execution-metrics">
+        <div><span>Observations</span><strong>{execution.observationCount}</strong></div>
+        <div><span>Remaining assets</span><strong>{execution.remainingAssetCount}</strong></div>
+        <div><span>Without planned link</span><strong>{execution.observationsWithoutPlannedAsset}</strong></div>
+        <div><span>Without raw GPS</span><strong>{execution.observationsWithoutRawGps}</strong></div>
+      </div>
+
+      {execution.checkpoint.issues.length > 0 && <div className="execution-review"><strong>Review before treating this mission as covered</strong><ul>{execution.checkpoint.issues.map((issue) => <li key={issue}>{issue}</li>)}</ul></div>}
+      {execution.checkpoint.disclosures.length > 0 && <div className="execution-disclosures"><strong>Provenance disclosures</strong><ul>{execution.checkpoint.disclosures.map((item) => <li key={item}>{item}</li>)}</ul></div>}
+
+      <div className="execution-actions">
+        {activeSession && <button className="primary" onClick={() => go({ name: 'capture', sessionId: activeSession.id })}>New observation</button>}
+        <button className="secondary" disabled={exporting} onClick={() => void exportExecutionSummary()}>{exporting ? 'Preparing…' : 'Export campaign summary'}</button>
+      </div>
+    </section>
 
     {activeSession
       ? <button className="primary wide" onClick={() => go({ name: 'session', sessionId: activeSession.id })}>Resume “{activeSession.title}”</button>
@@ -248,7 +355,24 @@ function CampaignScreen({ campaignId, revision, go, changed, fail }: SharedProps
     <div className="section-heading"><h2>Sessions</h2></div>
     {sessions.length === 0 ? <div className="empty"><strong>No sessions yet.</strong><span>Start the first field session for this campaign above.</span></div> : <div className="list">{sessions.map((session) => <button className="session-card" key={session.id} onClick={() => go({ name: 'session', sessionId: session.id })}><div><strong>{session.title}</strong><span>{formatTime(session.createdAt)}</span></div><span className={`status ${session.status}`}>{session.status}</span></button>)}</div>}
 
-    <details className="card assets-panel"><summary>Planned assets ({assets.length})</summary>{assets.length > 0 ? <><p className="muted">{Object.entries(typeCounts).map(([type, count]) => `${readable(type)}: ${count}`).join(' · ')}</p><ul>{assets.map((asset) => <li key={asset.id}><strong>{asset.name}</strong><span>{asset.assetType ? readable(asset.assetType) : 'Unclassified'}{asset.latitude !== null ? ` · ${asset.latitude.toFixed(5)}, ${asset.longitude?.toFixed(5)}` : ''}{asset.sourceRef ? ` · ref ${asset.sourceRef}` : ''}</span></li>)}</ul></> : <p className="muted">No planned assets in this campaign.</p>}</details>
+    <details className="card assets-panel" open={execution.remainingAssetCount > 0}>
+      <summary>Planned assets ({assets.length})</summary>
+      {assets.length > 0 ? <>
+        <p className="muted">{Object.entries(typeCounts).map(([type, count]) => `${readable(type)}: ${count}`).join(' · ')}</p>
+        <ul className="execution-asset-list">{assets.map((asset) => {
+          const assetExecution = executionByAsset.get(asset.id);
+          const covered = assetExecution?.status === 'COVERED';
+          return <li key={asset.id}>
+            <div className="execution-asset-copy">
+              <div className="execution-asset-title"><strong>{asset.name}</strong><span className={`coverage-badge ${covered ? 'covered' : 'pending'}`}>{covered ? 'Covered' : 'Not covered'}</span></div>
+              <span>{asset.assetType ? readable(asset.assetType) : 'Unclassified'}{asset.latitude !== null ? ` · ${asset.latitude.toFixed(5)}, ${asset.longitude?.toFixed(5)}` : ''}{asset.sourceRef ? ` · ref ${asset.sourceRef}` : ''}</span>
+              {assetExecution && assetExecution.observationCount > 0 && <span>{assetExecution.observationCount} linked observation{assetExecution.observationCount === 1 ? '' : 's'} · last {formatTime(assetExecution.lastObservedAt ?? '')}</span>}
+            </div>
+            {activeSession && <button type="button" className="ghost asset-capture-action" onClick={() => go({ name: 'capture', sessionId: activeSession.id, assetId: asset.id })}>Capture here</button>}
+          </li>;
+        })}</ul>
+      </> : <p className="muted">No planned assets in this campaign.</p>}
+    </details>
   </section>;
 }
 
@@ -357,11 +481,11 @@ function MapScreen({ sessionId, revision, go, fail }: SharedProps & { sessionId:
   </section>;
 }
 
-function CaptureScreen({ sessionId, go, changed, fail }: SharedProps & { sessionId: Uuid }) {
+function CaptureScreen({ sessionId, initialAssetId, go, changed, fail }: SharedProps & { sessionId: Uuid; initialAssetId: Uuid | null }) {
   const [capturedAt] = useState(nowIso()); const [location, setLocation] = useState<CapturedLocation>(() => unavailableLocation('UNAVAILABLE')); const [locating, setLocating] = useState(true);
   const [protocol, setProtocol] = useState<FieldProtocol>(DEFAULT_PROTOCOL);
   const [category, setCategory] = useState<string | null>(null); const [value, setValue] = useState<string | null>(null); const [evidence, setEvidence] = useState<EvidenceForm>(emptyEvidence); const [note, setNote] = useState(''); const [photo, setPhoto] = useState<File | null>(null); const [audio, setAudio] = useState<AudioRecording | null>(null);
-  const [assets, setAssets] = useState<Asset[]>([]); const [assetId, setAssetId] = useState(''); const [saving, setSaving] = useState(false);
+  const [assets, setAssets] = useState<Asset[]>([]); const [assetId, setAssetId] = useState(initialAssetId ?? ''); const [saving, setSaving] = useState(false);
   const acquireLocation = useCallback(async () => { setLocating(true); const next = await captureCurrentLocation(); setLocation(next); setLocating(false); }, []);
   useEffect(() => {
     void acquireLocation();
@@ -370,9 +494,11 @@ function CaptureScreen({ sessionId, go, changed, fail }: SharedProps & { session
     void repositories.getSession(sessionId).then(async (s) => {
       if (!s) return;
       setProtocol(protocolForSession(s).protocol);
-      setAssets(await repositories.listSessionAssets(s));
+      const visibleAssets = await repositories.listSessionAssets(s);
+      setAssets(visibleAssets);
+      if (initialAssetId && visibleAssets.some((asset) => asset.id === initialAssetId)) setAssetId(initialAssetId);
     }).catch(fail);
-  }, [acquireLocation, fail, sessionId]);
+  }, [acquireLocation, fail, initialAssetId, sessionId]);
   const assetOptions = useMemo(() => {
     if (location.latitude === null || location.longitude === null) return assets.map((asset) => ({ asset, distanceMeters: null }));
     return nearbyAssets({ latitude: location.latitude, longitude: location.longitude }, assets);
