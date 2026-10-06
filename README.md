@@ -30,7 +30,7 @@ The repository contains the first usable MVP workflow:
 - export portable data, create a ZIP backup with media, and conservatively restore a full ZIP or data-only canonical JSON;
 - surface storage durability and quota failures instead of reporting false success.
 
-Test deployment: [https://soroushkarahrodi79-oss.github.io/fieldos/](https://soroushkarahrodi79-oss.github.io/fieldos/)
+Live MVP: [https://fieldos-sigma.vercel.app/](https://fieldos-sigma.vercel.app/)
 
 **FieldOS completed its first real 60–120 minute field run on 2026-08-31**, on a physical iPhone:
 offline capture, tested close/reopen persistence, export, and backup all passed with no intended
